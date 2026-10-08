@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from backend.app.config import settings
 
+from backend.app.api.routes.jobs import router as jobs_router
 
 app = FastAPI(
     title=f"{settings.APP_NAME} API",
@@ -21,6 +22,7 @@ app.add_middleware(
     allow_headers=["Content-Type", "Authorization"],
 )
 
+app.include_router(jobs_router, prefix="/api/v1")
 
 @app.get("/health")
 async def health_check():
