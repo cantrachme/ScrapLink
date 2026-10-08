@@ -192,3 +192,28 @@ class JobListing(BaseModel):
     )
 
     last_verified_at: datetime | None = None
+
+
+class JobExtractionFailure(BaseModel):
+    job_url: str
+    error: str
+
+
+class JobSearchResultsResponse(BaseModel):
+    search_id: str
+    status: str
+    source: JobSource | None = None
+
+    discovered_urls: list[str] = Field(
+        default_factory=list
+    )
+    jobs: list[JobListing] = Field(
+        default_factory=list
+    )
+    failures: list[JobExtractionFailure] = Field(
+        default_factory=list
+    )
+
+    total_discovered: int = 0
+    total_extracted: int = 0
+    total_failed: int = 0

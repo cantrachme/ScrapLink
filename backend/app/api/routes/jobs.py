@@ -10,6 +10,8 @@ from backend.app.services.task_manager import (
     task_manager,
 )
 
+from backend.app.schemas.job import JobSearchResultsResponse
+
 router = APIRouter(prefix="/jobs", tags=["Jobs"])
 
 
@@ -42,3 +44,19 @@ async def get_job_search(search_id: str):
         )
 
     return task
+
+
+@router.get(
+    "/search/{search_id}/results",
+    response_model=JobSearchResultsResponse,
+)
+async def get_job_search_results(search_id: str):
+    results = task_manager.get_results(search_id)
+
+    if results is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Search task not found",
+        )
+
+    return results
