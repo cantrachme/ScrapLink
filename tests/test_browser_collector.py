@@ -100,6 +100,7 @@ def test_browser_collector_extracts_full_job():
     result = collector(
         JobSource.LINKEDIN,
         JobSearchRequest(
+            date_posted="any",
             keyword="Python Developer",
             source="linkedin",
         ),
@@ -135,6 +136,7 @@ def test_browser_collector_records_missing_detail():
     result = collector(
         JobSource.LINKEDIN,
         JobSearchRequest(
+            date_posted="any",
             keyword="Python Developer",
             source="linkedin",
         ),

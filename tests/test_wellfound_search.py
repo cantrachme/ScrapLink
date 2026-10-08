@@ -44,12 +44,10 @@ def test_wellfound_role_without_location():
     assert url == "https://wellfound.com/role/python-developer"
 
 
-def test_wellfound_rejects_unimplemented_date_filter():
-    with pytest.raises(ValueError, match="date_posted"):
-        build_wellfound_search_url(
-            JobSource.WELLFOUND,
-            make_request(date_posted="24h"),
-        )
+def test_wellfound_date_filter_is_applied_after_extraction():
+    assert build_wellfound_search_url(
+        JobSource.WELLFOUND, make_request(date_posted="24h"),
+    ) == build_wellfound_search_url(JobSource.WELLFOUND, make_request())
 
 
 def test_wellfound_rejects_unknown_role():
@@ -166,6 +164,7 @@ def test_wellfound_collector_integration():
         session_factory=lambda **kwargs: FakeSession(
             pages, visited
         ),
+        max_pages=1,
         headless=False,
         real_chrome=True,
     )

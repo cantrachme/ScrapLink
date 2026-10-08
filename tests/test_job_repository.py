@@ -180,3 +180,27 @@ def test_upsert_preserves_existing_data(db_session):
     assert replaced.compensation["currency"] == "USD"
     assert replaced.compensation["min_amount"] == 140000
     assert replaced.compensation["max_amount"] == 180000
+
+
+@pytest.mark.parametrize("source", [JobSource.LINKEDIN, JobSource.WELLFOUND])
+def test_upsert_normalizes_tracking_variations(db_session, source):
+    job_id = uuid4().int
+    canonical = (
+        f"https://www.linkedin.com/jobs/view/{job_id}/"
+        if source == JobSource.LINKEDIN
+        else f"https://wellfound.com/jobs/{job_id}-python-developer"
+    )
+    first = JobListing(
+        source=source, job_url=canonical + "?utm_source=first&trk=public_jobs#details",
+        title="Developer", company="Acme", description="Full description",
+    )
+    saved_first = repository.upsert(db_session, first)
+    first_id = saved_first.id
+    second = first.model_copy(update={"job_url": canonical + "?utm_source=second", "title": "Senior Developer"})
+    saved_second = repository.upsert(db_session, second)
+    assert saved_second.id == first_id
+    assert saved_second.job_url == canonical
+    assert saved_second.title == "Senior Developer"
+    assert saved_second.description == "Full description"
+    assert "utm_source" in first.job_url  # Do not mutate callers' model instances.
+    assert db_session.scalar(select(func.count()).select_from(Job).where(Job.job_url == canonical)) == 1

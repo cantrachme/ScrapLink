@@ -25,8 +25,8 @@ def build_wellfound_search_url(
     """
     Build a verified Wellfound public role-search URL.
 
-    This does not support arbitrary keyword searches
-    or date filters. Those require further integration.
+    Arbitrary keyword searches are unsupported. Posting windows are
+    validated locally after extraction; public role pages have no date filter.
     """
 
     if source != JobSource.WELLFOUND:
@@ -52,10 +52,9 @@ def build_wellfound_search_url(
     if hasattr(posted_window, "value"):
         posted_window = posted_window.value
 
-    if posted_window != "any":
+    if posted_window not in ("any", "24h", "7d", "30d"):
         raise ValueError(
-            "Wellfound date_posted filtering is not "
-            "implemented yet. Use date_posted='any'."
+            f"Unsupported date_posted filter: {posted_window}"
         )
 
     role_slug = SUPPORTED_ROLES[keyword]

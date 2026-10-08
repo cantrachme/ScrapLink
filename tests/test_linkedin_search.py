@@ -110,7 +110,7 @@ def test_linkedin_search_and_detail_discovery():
     request = JobSearchRequest(
         source="linkedin",
         keyword="Python Developer",
-        date_posted="24h",
+        date_posted="any",
     )
 
     search_url = build_linkedin_search_url(
@@ -166,6 +166,7 @@ def test_linkedin_search_and_detail_discovery():
             pages,
             visited,
         ),
+        max_pages=1,
         headless=False,
         real_chrome=True,
     )

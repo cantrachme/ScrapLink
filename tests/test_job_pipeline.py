@@ -48,7 +48,7 @@ def test_linkedin_pipeline():
 
     result = pipeline.run(
         source=JobSource.LINKEDIN,
-        search=JobSearchRequest(keyword="Python"),
+        search=JobSearchRequest(date_posted="any", keyword="Python"),
         listing_html=listing_html,
         detail_pages={
             url1: make_job_html("Python Developer", "Company A"),
@@ -74,7 +74,7 @@ def test_wellfound_pipeline():
 
     result = pipeline.run(
         source=JobSource.WELLFOUND,
-        search=JobSearchRequest(keyword="AI Engineer"),
+        search=JobSearchRequest(date_posted="any", keyword="AI Engineer"),
         listing_html=listing_html,
         detail_pages={
             url: make_job_html("AI Engineer", "Startup A"),
@@ -98,7 +98,7 @@ def test_partial_extraction_failure():
 
     result = pipeline.run(
         source=JobSource.WELLFOUND,
-        search=JobSearchRequest(keyword="Developer"),
+        search=JobSearchRequest(date_posted="any", keyword="Developer"),
         listing_html=listing_html,
         detail_pages={
             valid_url: make_job_html("Developer", "Startup B"),
@@ -115,7 +115,7 @@ def test_partial_extraction_failure():
 def test_missing_detail_html():
     result = pipeline.run(
         source=JobSource.LINKEDIN,
-        search=JobSearchRequest(keyword="Python"),
+        search=JobSearchRequest(date_posted="any", keyword="Python"),
         listing_html='<a href="/jobs/view/101/">Job</a>',
         detail_pages={},
     )
@@ -135,6 +135,7 @@ def test_max_results():
     result = pipeline.run(
         source=JobSource.LINKEDIN,
         search=JobSearchRequest(
+            date_posted="any",
             keyword="Developer",
             max_results=1,
         ),
@@ -145,6 +146,33 @@ def test_max_results():
         },
     )
 
-    assert result.total_discovered == 1
+    assert result.total_discovered == 3
     assert result.total_extracted == 1
     assert result.total_failed == 0
+
+
+def test_pipeline_fills_result_limit_after_date_exclusions(caplog):
+    import logging
+    from datetime import datetime, timezone
+
+    first = "https://www.linkedin.com/jobs/view/101/"
+    second = "https://www.linkedin.com/jobs/view/202/"
+    third = "https://www.linkedin.com/jobs/view/303/"
+    with caplog.at_level(logging.INFO):
+        result = pipeline.run(
+            source=JobSource.LINKEDIN,
+            search=JobSearchRequest(keyword="Developer", max_results=1),
+            listing_html=f'<a href="{first}">1</a><a href="{second}?trk=x">2</a><a href="{second}">dup</a><a href="{third}">3</a>',
+            detail_pages={
+                first: make_job_html("Undated", "Acme"),
+                second + "?utm_source=test": make_job_html("Recent", "Acme").replace(
+                    '"@type": "JobPosting",', '"@type": "JobPosting", "datePosted": "2026-10-08T10:00:00Z",',
+                ),
+            },
+            now=datetime(2026, 10, 8, 12, tzinfo=timezone.utc),
+        )
+    assert result.discovered_urls == [first, second, third]
+    assert result.total_extracted == 1
+    assert result.total_failed == 0  # Third URL was discovered but intentionally not attempted.
+    assert result.jobs[0].title == "Recent"
+    assert "Excluded job" in caplog.text

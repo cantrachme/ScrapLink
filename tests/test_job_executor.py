@@ -44,6 +44,7 @@ def create_search(cleanup_records, source="linkedin"):
         json={
             "keyword": "Python Developer",
             "source": source,
+            "date_posted": "any",
         },
     )
 

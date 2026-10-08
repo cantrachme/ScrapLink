@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.models.job import Job
 from backend.app.schemas.job import JobListing
+from backend.app.services.job_deduplication import normalize_job_url
 
 
 class JobRepository:
@@ -35,6 +36,7 @@ class JobRepository:
 
         # Convert enums into database string values.
         values["source"] = listing.source.value
+        values["job_url"] = normalize_job_url(listing.source, listing.job_url)
         values["status"] = listing.status.value
 
         values["workplace_type"] = (

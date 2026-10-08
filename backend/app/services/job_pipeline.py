@@ -1,17 +1,19 @@
-
+import logging
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Mapping
 
 from scrapling.parser import Selector
 
-from backend.app.schemas.job import (
-    JobListing,
-    JobSearchRequest,
-    JobSource,
-)
+from backend.app.schemas.job import JobListing, JobSearchRequest, JobSource
+from backend.app.services.job_deduplication import job_identity
+from backend.app.services.job_filters import matches_posting_window
 from backend.app.sources.base import BaseJobSourceAdapter
 from backend.app.sources.linkedin.adapter import LinkedInJobAdapter
 from backend.app.sources.wellfound.adapter import WellfoundJobAdapter
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -41,7 +43,7 @@ class PipelineResult:
 
 
 class JobExtractionPipeline:
-    """Process job listing and detail HTML through source adapters."""
+    """Discover independently of detail extraction and posting-date validation."""
 
     def __init__(self):
         self.adapters: dict[JobSource, BaseJobSourceAdapter] = {
@@ -49,59 +51,77 @@ class JobExtractionPipeline:
             JobSource.WELLFOUND: WellfoundJobAdapter(),
         }
 
+    def _adapter(self, source: JobSource) -> BaseJobSourceAdapter:
+        adapter = self.adapters.get(source)
+        if adapter is None:
+            raise ValueError(f"Unsupported job source: {source}")
+        return adapter
+
+    def discover_urls(
+        self,
+        source: JobSource,
+        search: JobSearchRequest,
+        listing_html: str,
+    ) -> list[str]:
+        return self._adapter(source).discover_job_urls(
+            Selector(content=listing_html), search,
+        )
+
+    def add_detail(
+        self,
+        result: PipelineResult,
+        search: JobSearchRequest,
+        job_url: str,
+        html: str | None,
+        *,
+        now: datetime,
+    ) -> None:
+        """Extract once; append a qualifying job or a genuine extraction failure."""
+        adapter = self._adapter(result.source)
+        if not html:
+            result.failures.append(ExtractionFailure(
+                job_url=job_url, error="Job detail HTML unavailable",
+            ))
+            return
+        try:
+            job = adapter.extract_job_details(Selector(content=html), job_url)
+        except Exception as exc:
+            result.failures.append(ExtractionFailure(
+                job_url=job_url, error=f"{type(exc).__name__}: {exc}",
+            ))
+            return
+
+        if matches_posting_window(job, search.date_posted, now):
+            result.jobs.append(job)
+        else:
+            logger.info(
+                "Excluded job %s from posting window %s (posted_at=%s, posted_date=%s)",
+                job_url, search.date_posted, job.posted_at, job.posted_date,
+            )
+
     def run(
         self,
         source: JobSource,
         search: JobSearchRequest,
         listing_html: str,
         detail_pages: Mapping[str, str],
+        *,
+        now: datetime | None = None,
     ) -> PipelineResult:
-
-        adapter = self.adapters.get(source)
-
-        if adapter is None:
-            raise ValueError(f"Unsupported job source: {source}")
-
-        listing_page = Selector(content=listing_html)
-
-        job_urls = adapter.discover_job_urls(
-            listing_page,
-            search,
-        )
-
-        result = PipelineResult(
-            source=source,
-            discovered_urls=job_urls,
-        )
+        reference = now or datetime.now(timezone.utc)
+        job_urls = self.discover_urls(source, search, listing_html)
+        result = PipelineResult(source=source, discovered_urls=job_urls)
+        # Supplied fixture pages may be keyed by a tracking or slug variant.
+        pages_by_identity: dict[tuple[JobSource, str], str] = {}
+        for url, html in detail_pages.items():
+            pages_by_identity.setdefault(job_identity(source, url), html)
 
         for job_url in job_urls:
-            html = detail_pages.get(job_url)
-
-            if not html:
-                result.failures.append(
-                    ExtractionFailure(
-                        job_url=job_url,
-                        error="Job detail HTML unavailable",
-                    )
-                )
-                continue
-
-            try:
-                detail_page = Selector(content=html)
-
-                job = adapter.extract_job_details(
-                    detail_page,
-                    job_url,
-                )
-
-                result.jobs.append(job)
-
-            except Exception as exc:
-                result.failures.append(
-                    ExtractionFailure(
-                        job_url=job_url,
-                        error=f"{type(exc).__name__}: {exc}",
-                    )
-                )
-
+            if result.total_extracted >= search.max_results:
+                break
+            self.add_detail(
+                result, search, job_url,
+                pages_by_identity.get(job_identity(source, job_url)),
+                now=reference,
+            )
         return result

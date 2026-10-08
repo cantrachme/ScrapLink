@@ -1,8 +1,7 @@
 
 import json
 import re
-from datetime import date
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import urlsplit
 
 from scrapling.parser import Selector
 
@@ -18,6 +17,11 @@ from backend.app.sources.base import (
     BaseJobSourceAdapter,
     normalize_source_job_url,
 )
+from backend.app.services.job_deduplication import (
+    deduplicate_job_urls,
+    normalize_job_url,
+)
+from backend.app.services.job_filters import parse_posting_date
 
 
 class WellfoundJobAdapter(BaseJobSourceAdapter):
@@ -45,14 +49,7 @@ class WellfoundJobAdapter(BaseJobSourceAdapter):
         if not self.JOB_PATH.fullmatch(parsed.path):
             return None
 
-        # Remove tracking query parameters and fragments.
-        return urlunsplit((
-            parsed.scheme,
-            parsed.netloc,
-            parsed.path,
-            "",
-            "",
-        ))
+        return normalize_job_url(self.source, url)
 
     def discover_job_urls(
         self,
@@ -61,7 +58,6 @@ class WellfoundJobAdapter(BaseJobSourceAdapter):
     ) -> list[str]:
 
         urls = []
-        seen = set()
 
         links = page.css(
             'a[href*="/jobs/"]::attr(href)'
@@ -70,16 +66,12 @@ class WellfoundJobAdapter(BaseJobSourceAdapter):
         for href in links:
             url = self._valid_job_url(str(href))
 
-            if not url or url in seen:
+            if not url:
                 continue
 
-            seen.add(url)
             urls.append(url)
 
-            if len(urls) >= search.max_results:
-                break
-
-        return urls
+        return deduplicate_job_urls(self.source, urls)
 
     @staticmethod
     def _structured_job(page: Selector) -> dict:
@@ -315,16 +307,7 @@ class WellfoundJobAdapter(BaseJobSourceAdapter):
                     if description:
                         break
 
-        raw_date = structured.get("datePosted")
-        posted_date = None
-
-        if raw_date:
-            try:
-                posted_date = date.fromisoformat(
-                    str(raw_date)[:10]
-                )
-            except ValueError:
-                pass
+        posted_date, posted_at = parse_posting_date(structured.get("datePosted"))
 
         location = self._get_location(
             structured
@@ -381,4 +364,5 @@ class WellfoundJobAdapter(BaseJobSourceAdapter):
                 structured
             ),
             posted_date=posted_date,
+            posted_at=posted_at,
         )

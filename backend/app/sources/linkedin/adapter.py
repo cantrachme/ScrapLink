@@ -1,7 +1,5 @@
 
 import json
-import re
-from datetime import date
 from urllib.parse import urlsplit
 
 from scrapling.parser import Selector
@@ -15,6 +13,12 @@ from backend.app.sources.base import (
     BaseJobSourceAdapter,
     normalize_source_job_url,
 )
+from backend.app.services.job_deduplication import (
+    deduplicate_job_urls,
+    extract_job_id,
+    normalize_job_url,
+)
+from backend.app.services.job_filters import parse_posting_date
 
 
 class LinkedInJobAdapter(BaseJobSourceAdapter):
@@ -31,7 +35,6 @@ class LinkedInJobAdapter(BaseJobSourceAdapter):
         """Discover unique job URLs from supplied HTML."""
 
         urls = []
-        seen = set()
 
         links = page.css(
             'a[href*="/jobs/view/"]::attr(href)'
@@ -52,14 +55,10 @@ class LinkedInJobAdapter(BaseJobSourceAdapter):
             ):
                 continue
 
-            if url not in seen:
-                seen.add(url)
-                urls.append(url)
+            urls.append(url)
 
-            if len(urls) >= search.max_results:
-                break
-
-        return urls
+        # Discovery must not be capped before detail/date validation.
+        return deduplicate_job_urls(self.source, urls)
 
     @staticmethod
     def _get_structured_job(page: Selector) -> dict:
@@ -230,30 +229,18 @@ class LinkedInJobAdapter(BaseJobSourceAdapter):
                     if description:
                         break
 
-        posted_date = None
-        raw_date = data.get("datePosted")
-
-        if raw_date:
-            try:
-                posted_date = date.fromisoformat(
-                    str(raw_date)[:10]
-                )
-            except ValueError:
-                pass
+        posted_date, posted_at = parse_posting_date(data.get("datePosted"))
 
         location = self._location(data) or self._first_text(
             page,
             [".topcard__flavor--bullet::text"],
         )
 
-        match = re.search(
-            r"(\d+)/?$",
-            urlsplit(url).path,
-        )
+        url = normalize_job_url(self.source, url)
 
         return JobListing(
             source=self.source,
-            source_job_id=match.group(1) if match else None,
+            source_job_id=extract_job_id(self.source, url),
             job_url=url,
             title=str(title).strip(),
             company=str(company).strip(),
@@ -261,4 +248,5 @@ class LinkedInJobAdapter(BaseJobSourceAdapter):
             location=location,
             description=description,
             posted_date=posted_date,
+            posted_at=posted_at,
         )

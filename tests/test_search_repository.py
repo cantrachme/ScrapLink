@@ -176,3 +176,32 @@ def test_failed_search_status(db_session):
 
     with pytest.raises(ValueError):
         repository.start(db_session, task.search_id)
+
+
+def test_date_exclusions_keep_persisted_totals_and_failures_distinct(db_session):
+    from datetime import datetime, timezone
+    from backend.app.services.job_pipeline import JobExtractionPipeline
+
+    task = repository.create(db_session, create_request(), JobSource.LINKEDIN)
+    repository.start(db_session, task.search_id)
+    ids = [uuid4().int for _ in range(3)]
+    urls = [f"https://www.linkedin.com/jobs/view/{job_id}/" for job_id in ids]
+    pipeline = JobExtractionPipeline()
+    result = pipeline.run(
+        source=JobSource.LINKEDIN, search=create_request(),
+        listing_html="".join(f'<a href="{url}">Job</a>' for url in urls),
+        detail_pages={
+            urls[0]: '<script type="application/ld+json">{"@type":"JobPosting","title":"Dev","hiringOrganization":{"name":"Acme"},"datePosted":"2026-10-08T10:00:00Z"}</script>',
+            urls[1]: '<script type="application/ld+json">{"@type":"JobPosting","title":"Dev","hiringOrganization":{"name":"Acme"}}</script>',
+        },
+        now=datetime(2026, 10, 8, 12, tzinfo=timezone.utc),
+    )
+    repository.complete(db_session, task.search_id, result)
+    saved = repository.get_results(db_session, task.search_id)
+    assert saved.total_discovered == 3
+    assert saved.total_extracted == 1
+    assert saved.total_failed == 1
+    assert [failure.job_url for failure in saved.failures] == [urls[2]]
+    assert [job.job_url for job in saved.jobs] == [urls[0]]
+    # Existing schema persists counts, jobs and failures, not excluded URL rows.
+    assert set(saved.discovered_urls) == {urls[0], urls[2]}
