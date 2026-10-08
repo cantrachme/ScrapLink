@@ -22,6 +22,7 @@ class DatePosted(str, Enum):
 
 
 class JobSearchRequest(BaseModel):
+    source: Literal["linkedin", "wellfound"] = "linkedin"
     keyword: str = Field(
         min_length=1,
         max_length=200,
