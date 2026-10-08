@@ -1,8 +1,19 @@
 
+from datetime import date, datetime, timezone
 from enum import Enum
+from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    field_validator,
+    model_validator,
+)
 
+
+# ==========================================
+# JOB SEARCH MODELS
+# ==========================================
 
 class DatePosted(str, Enum):
     PAST_24_HOURS = "24h"
@@ -49,9 +60,14 @@ class JobSearchResponse(BaseModel):
     message: str
 
 
+# ==========================================
+# JOB DETAILS ENUMS
+# ==========================================
 
-
-from datetime import date
+class JobSource(str, Enum):
+    LINKEDIN = "linkedin"
+    WELLFOUND = "wellfound"
+    REALPYTHON_DEMO = "realpython_demo"
 
 
 class JobStatus(str, Enum):
@@ -60,11 +76,119 @@ class JobStatus(str, Enum):
     UNKNOWN = "unknown"
 
 
+class WorkplaceType(str, Enum):
+    REMOTE = "remote"
+    HYBRID = "hybrid"
+    ONSITE = "onsite"
+
+
+class EmploymentType(str, Enum):
+    FULL_TIME = "full_time"
+    PART_TIME = "part_time"
+    CONTRACT = "contract"
+    INTERNSHIP = "internship"
+    TEMPORARY = "temporary"
+    OTHER = "other"
+
+
+# ==========================================
+# COMPENSATION MODEL
+# ==========================================
+
+class Compensation(BaseModel):
+    raw_text: str | None = None
+    currency: str | None = None
+
+    min_amount: float | None = Field(
+        default=None,
+        ge=0,
+    )
+
+    max_amount: float | None = Field(
+        default=None,
+        ge=0,
+    )
+
+    period: Literal["hour", "month", "year"] | None = None
+
+    @model_validator(mode="after")
+    def validate_range(self):
+        if (
+            self.min_amount is not None
+            and self.max_amount is not None
+            and self.min_amount > self.max_amount
+        ):
+            raise ValueError(
+                "Minimum compensation cannot exceed maximum"
+            )
+        return self
+
+
+# ==========================================
+# JOB DETAILS MODEL
+# ==========================================
+
 class JobListing(BaseModel):
+
+    # Source identification
+    source: JobSource
+    source_job_id: str | None = None
+
+    job_url: str = Field(min_length=1)
+    application_url: str | None = None
+
+    # Basic job details
     title: str = Field(min_length=1)
     company: str = Field(min_length=1)
+
+    company_url: str | None = None
     location: str | None = None
-    job_url: str = Field(min_length=1)
-    source: str
+
+    # Employment details
+    workplace_type: WorkplaceType | None = None
+    employment_type: EmploymentType | None = None
+    seniority_level: str | None = None
+
+    # Complete job description
+    description: str | None = None
+
+    responsibilities: list[str] = Field(
+        default_factory=list
+    )
+
+    requirements: list[str] = Field(
+        default_factory=list
+    )
+
+    skills: list[str] = Field(
+        default_factory=list
+    )
+
+    # Experience
+    experience_min_years: float | None = Field(
+        default=None,
+        ge=0,
+    )
+
+    experience_max_years: float | None = Field(
+        default=None,
+        ge=0,
+    )
+
+    # Compensation
+    compensation: Compensation | None = None
+
+    # Posting information
     posted_date: date | None = None
+    posted_at: datetime | None = None
+    posted_text: str | None = None
+
+    # Verification
     status: JobStatus = JobStatus.UNKNOWN
+
+    # Tracking
+    first_seen_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
+
+    last_verified_at: datetime | None = None
