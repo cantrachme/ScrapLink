@@ -30,6 +30,48 @@ def utc_now() -> datetime:
 class SearchRepository:
     """Persistent storage for search tasks and their results."""
 
+
+    @staticmethod
+    def claim_next_pending(
+        db: Session,
+        search_id: UUID | None = None,
+    ) -> SearchTaskRecord | None:
+        """
+        Atomically claim one pending search.
+
+        SKIP LOCKED prevents multiple workers from
+        claiming the same task concurrently.
+        """
+
+        statement = (
+            select(SearchTaskRecord)
+            .where(SearchTaskRecord.status == "pending")
+            .order_by(
+                SearchTaskRecord.created_at,
+                SearchTaskRecord.search_id,
+            )
+            .with_for_update(skip_locked=True)
+            .limit(1)
+        )
+
+        if search_id is not None:
+            statement = statement.where(
+                SearchTaskRecord.search_id == search_id
+            )
+
+        task = db.scalar(statement)
+
+        if task is None:
+            return None
+
+        task.status = "running"
+        task.started_at = utc_now()
+        task.updated_at = utc_now()
+
+        db.flush()
+        return task
+
+
     @staticmethod
     def create(
         db: Session,
