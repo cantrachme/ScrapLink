@@ -12,6 +12,15 @@ class Settings(BaseSettings):
 
     DATABASE_URL: str = ""
 
+
+    # PostgreSQL
+    POSTGRES_HOST: str = "127.0.0.1"
+    POSTGRES_PORT: int = 5433
+    POSTGRES_DB: str = "scraplink"
+    POSTGRES_USER: str = "scraplink"
+    POSTGRES_PASSWORD: str = ""
+
+
     BROWSER_HEADLESS: bool = False
     BROWSER_TIMEOUT_MS: int = 30000
 

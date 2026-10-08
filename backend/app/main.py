@@ -6,6 +6,13 @@ from backend.app.config import settings
 
 from backend.app.api.routes.jobs import router as jobs_router
 
+from fastapi import Depends, HTTPException
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
+
+from backend.app.database import get_db
+
 app = FastAPI(
     title=f"{settings.APP_NAME} API",
     description="Backend API for the ScrapLink job discovery platform",
@@ -32,3 +39,26 @@ async def health_check():
         "environment": settings.APP_ENV,
         "version": app.version,
     }
+
+
+
+@app.get("/health/db")
+def database_health(
+    db: Session = Depends(get_db),
+):
+    """Verify the database connection."""
+
+    try:
+        result = db.execute(text("SELECT 1")).scalar_one()
+
+        return {
+            "status": "healthy",
+            "database": "postgresql",
+            "connected": result == 1,
+        }
+
+    except SQLAlchemyError:
+        raise HTTPException(
+            status_code=503,
+            detail="Database unavailable",
+        )

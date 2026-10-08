@@ -25,6 +25,8 @@ patchright==1.63.0
 playwright==1.63.0
 pluggy==1.6.0
 Protego==0.7.0
+psycopg==3.3.6
+psycopg-binary==3.3.6
 pycparser==3.0
 pydantic==2.13.5
 pydantic-settings==2.15.0
@@ -35,6 +37,7 @@ pytest==9.1.1
 python-dotenv==1.2.4
 PyYAML==6.0.3
 scrapling==0.4.15
+SQLAlchemy==2.1.4
 starlette==1.7.0
 tld==0.13.2
 typing-inspection==0.4.4
