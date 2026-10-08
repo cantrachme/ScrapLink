@@ -34,7 +34,7 @@ class JobSearchRequest(BaseModel):
         max_length=200,
     )
 
-    date_posted: DatePosted = DatePosted.PAST_24_HOURS
+    date_posted: Literal["any", "24h", "7d", "30d"] = "24h"
 
     max_results: int = Field(
         default=50,
