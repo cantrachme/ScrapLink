@@ -1,9 +1,9 @@
-# ScrapLink frontend — Step 48
+# ScrapLink frontend — Step 49
 
 React, TypeScript, Vite, and React Router workspace for creating persisted job
 searches and following real FastAPI progress. No mock jobs, counts, or worker
-activity are displayed. Search history, the full results table, and job details
-remain for later steps.
+activity are displayed. Saved search results and complete job details are connected
+to PostgreSQL through the API. A search-history index is not yet available.
 
 ## Local development
 
@@ -30,7 +30,7 @@ npm run dev
 Open `http://localhost:5173`. Vite uses a strict port and proxies relative `/api`
 and `/health` paths to `http://127.0.0.1:8000`. The proxy streams SSE without
 rewrites or buffering; no WebSocket proxy, CORS change, or frontend environment
-variable is required. No additional dependencies were added in Step 48.
+variable is required. No additional dependencies were added in Steps 48–49.
 
 The dashboard health indicator still checks only `/health` with an eight-second
 timeout. It does not check database or worker readiness.
@@ -41,8 +41,8 @@ timeout. It does not check database or worker readiness.
 | --- | --- |
 | `/` | Dashboard, backend health, links to Job Search |
 | `/search` | Controlled search form and source restrictions |
-| `/searches/:searchId` | Persisted task, live progress, results summary |
-| `/jobs/:jobId` | Existing Step 49 job-details placeholder |
+| `/searches/:searchId` | Persisted task, live progress, saved job results |
+| `/jobs/:jobId` | Complete persisted job details by database UUID |
 | `*` | Not-found page |
 
 The form posts JSON to `POST /api/v1/jobs/search`. FastAPI returns HTTP 202 with
@@ -81,7 +81,7 @@ The page validates canonical UUID syntax before calling:
 
 - `GET /api/v1/jobs/search/{searchId}` for persisted status/request/timestamps.
 - `GET /api/v1/jobs/search/{searchId}/events` for active search progress.
-- `GET /api/v1/jobs/search/{searchId}/results` for a terminal results summary.
+- `GET /api/v1/jobs/search/{searchId}/results` for all saved jobs belonging to a terminal search.
 
 `useSearchEvents` uses native `EventSource` and named listeners:
 
@@ -126,10 +126,54 @@ also unavailable: extractions may never have been committed;
 the terminal summary describes only persisted records. Full historical timeline
 browsing for finished searches is not implemented in this step.
 
-Results remain a summary on the same search page. There are no fabricated job
-rows, unsupported cancel/pause/resume actions, or claims that an extraction event
-alone confirms database persistence. Step 49 owns the table and detailed job
-presentation; the backend currently has no standalone job-details API.
+## Saved job results and details
+
+`GET /api/v1/jobs/search/{searchId}/results` retains its existing envelope and
+returns the entire saved result set for that search (no backend pagination).
+Each job now includes `id`, its PostgreSQL UUID, and `updated_at`, alongside all
+previous fields. `PersistedJobResponse` extends the extraction `JobListing`
+model: collectors still supply listings without database IDs. Upserts retain
+the same ID when a job with the same source and normalized URL occurs in multiple
+searches. These searches reference the latest stored job, not immutable snapshots.
+No database migration is needed.
+
+The Job Results section shows the distinct loaded job count and paginates locally
+at 20 (default), 50, or 100 rows. Separate title/company searches combine with
+source (when multiple sources exist), workplace, and employment filters. Filters,
+sort changes, and page-size changes reset to page one. Sorting supports newest,
+oldest, title A–Z, and company A–Z with stable UUID tie breaking. Dates prefer a
+valid `posted_at`, then `posted_date`; missing/invalid dates stay last in both
+date directions. No dates or workplace types are inferred. Rows become labelled
+cards on smaller screens, with internal detail links and separate source links.
+Counts describe the loaded search results, not all jobs in the database.
+
+Pending and running searches retain live progress and explain that saved jobs
+are unavailable until termination. The backend persists final results in a
+transaction. `job_extracted` events only update progress/activity. Completion or
+failure triggers one persisted-results fetch; repeated terminal events do not
+trigger duplicate fetches. A reopened terminal search loads saved jobs without
+opening a stream. Failed searches show any persisted results as potentially
+incomplete; empty results, filter misses, loading, and retrieval errors have
+separate states. Retrieval failures support manual retry.
+
+`GET /api/v1/jobs/{jobId}` returns `PersistedJobResponse`, HTTP 404 for a missing
+job, or HTTP 422 for malformed UUID syntax. `/jobs/:jobId` validates its UUID
+before requesting this endpoint and always fetches the job, including on direct
+entry or refresh. The optional `?searchId=<UUID>` query parameter preserves the
+back link to search results; otherwise navigation returns to Job Search. No
+React navigation cache is required. The page renders all available metadata,
+full description, responsibilities, requirements, skills, experience, compensation,
+and source/application/company links. Amounts use only the stored currency and
+period; null values never imply USD or annual pay.
+
+HTML descriptions are parsed in an inert template, stripped of executable
+content, and displayed as escaped plain text with paragraph breaks. Rich styles
+and embedded media are deliberately not preserved. Only absolute HTTP/HTTPS
+links without embedded credentials are clickable, with `noopener noreferrer`.
+The client validates critical fields in both response shapes and preserves the
+existing relative URLs, 15-second timeout, cancellation, and error handling.
+Backend counters can differ from loaded distinct rows (for example, duplicate
+extractions); the dashboard reports both without fabricating additional jobs.
 
 ## Worker startup limitation and Step 50 integration
 
@@ -172,7 +216,11 @@ fixture infrastructure. The previous foundation/navigation/health checks remain;
 the obsolete assertion that the search page has no inputs now checks the real
 form. New suites cover creation, validation, errors/timeouts, duplicate clicks,
 retrieval, reload, every event, replay/order/deduplication, malformed payloads,
-reconnection, terminal closure, listener cleanup, and capped activity.
+reconnection, terminal closure, listener cleanup, and capped activity. Step 49
+adds stored-job API contracts, UUID validation, full descriptions and XSS safety,
+compensation, links, results filters/sorting/pagination, failure states, direct
+navigation, completion reconciliation, and responsive row markup. New backend
+API tests use PostgreSQL transactions rolled back after every test.
 
 ## Production
 

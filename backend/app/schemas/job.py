@@ -2,6 +2,7 @@
 from datetime import date, datetime, timezone
 from enum import Enum
 from typing import Literal
+from uuid import UUID
 
 from pydantic import (
     BaseModel,
@@ -195,6 +196,13 @@ class JobListing(BaseModel):
     last_verified_at: datetime | None = None
 
 
+class PersistedJobResponse(JobListing):
+    """Read-only stored job; collectors continue to supply JobListing without IDs."""
+
+    id: UUID
+    updated_at: datetime
+
+
 class JobExtractionFailure(BaseModel):
     job_url: str
     error: str
@@ -208,7 +216,7 @@ class JobSearchResultsResponse(BaseModel):
     discovered_urls: list[str] = Field(
         default_factory=list
     )
-    jobs: list[JobListing] = Field(
+    jobs: list[PersistedJobResponse] = Field(
         default_factory=list
     )
     failures: list[JobExtractionFailure] = Field(

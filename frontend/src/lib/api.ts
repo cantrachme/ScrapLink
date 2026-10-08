@@ -1,7 +1,10 @@
-import type { JobSearchRequest, JobSearchResponse, SearchTask } from '../types/search'
+import type { PersistedJob } from '../types/job'
+import { isPersistedJob, SOURCE_LABELS } from './job-contract'
+import type { JobSearchRequest, JobSearchResponse, JobSearchResultsResponse, SearchTask } from '../types/search'
 import { isCount, isRecord, isSearchId, isSearchTask, isTaskStatus } from './search-contract'
 
 export const API_PATHS = {
+  job: (jobId: string) => `/api/v1/jobs/${encodeURIComponent(jobId)}`,
   health: '/health',
   databaseHealth: '/health/db',
   createSearch: '/api/v1/jobs/search',
@@ -128,4 +131,27 @@ export async function getSearchResultsSummary(searchId: string, signal?: AbortSi
     !isCount(v.total_discovered) || !isCount(v.total_extracted) || !isCount(v.total_failed)) throw invalidResponse()
   return { search_id: searchId, status: v.status, total_discovered: v.total_discovered,
     total_extracted: v.total_extracted, total_failed: v.total_failed }
+}
+
+export async function getSearchResults(searchId: string, signal?: AbortSignal): Promise<JobSearchResultsResponse> {
+  if (!isSearchId(searchId)) throw new ApiError('Invalid search ID.', 'response')
+  const v = await requestJson<unknown>(API_PATHS.searchResults(searchId), { signal })
+  if (!isRecord(v) || !isSearchId(v.search_id) || v.search_id.toLowerCase() !== searchId.toLowerCase() ||
+    !isTaskStatus(v.status) || !isCount(v.total_discovered) || !isCount(v.total_extracted) || !isCount(v.total_failed) ||
+    !(v.source === null || (typeof v.source === 'string' && Object.hasOwn(SOURCE_LABELS, v.source))) ||
+    !Array.isArray(v.jobs) || !v.jobs.every(isPersistedJob) ||
+    !Array.isArray(v.discovered_urls) || !v.discovered_urls.every((url) => typeof url === 'string') ||
+    !Array.isArray(v.failures) || !v.failures.every((f) => isRecord(f) && typeof f.job_url === 'string' && typeof f.error === 'string')) {
+    throw new ApiError('The backend returned missing or malformed job results.', 'response')
+  }
+  return v as unknown as JobSearchResultsResponse
+}
+
+export async function getJobById(jobId: string, signal?: AbortSignal): Promise<PersistedJob> {
+  if (!isSearchId(jobId)) throw new ApiError('Invalid job ID.', 'response')
+  const v = await requestJson<unknown>(API_PATHS.job(jobId), { signal })
+  if (!isPersistedJob(v) || v.id.toLowerCase() !== jobId.toLowerCase()) {
+    throw new ApiError('The backend returned missing or malformed job fields.', 'response')
+  }
+  return v
 }

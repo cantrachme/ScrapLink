@@ -14,7 +14,7 @@ from backend.app.models.search import (
 )
 from backend.app.repositories.job_repository import JobRepository
 from backend.app.schemas.job import (
-    JobListing,
+    PersistedJobResponse,
     JobSearchRequest,
     JobSearchResultsResponse,
     JobExtractionFailure,
@@ -244,7 +244,7 @@ class SearchRepository:
         ).all()
 
         jobs = [
-            JobListing.model_validate(job, from_attributes=True)
+            PersistedJobResponse.model_validate(job, from_attributes=True)
             for job in stored_jobs
         ]
 

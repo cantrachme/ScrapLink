@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { PageHeader } from '../components/ui/PageHeader'
-import { ApiError, getJobSearch, getSearchResultsSummary, type SearchResultsSummary } from '../lib/api'
+import { ApiError, getJobSearch, getSearchResults } from '../lib/api'
 import { DATE_LABELS, isSearchId, isTerminal } from '../lib/search-contract'
 import { activityMessage } from '../lib/search-events'
 import { useSearchEvents } from '../hooks/useSearchEvents'
-import type { SearchTask } from '../types/search'
+import { JobResults } from '../components/jobs/JobResults'
+import type { JobSearchResultsResponse, SearchTask } from '../types/search'
 
 const statusLabels = { pending: 'Queued', running: 'Running', completed: 'Completed', failed: 'Failed' }
 const connectionLabels = { connecting: 'Connecting to live progress…', live: 'Live progress connected',
@@ -15,7 +16,7 @@ const time = (value: string) => new Date(value).toLocaleString()
 function SearchProgress({ task }: { task: SearchTask }) {
   const progress = useSearchEvents(task)
   const [latest, setLatest] = useState(task)
-  const [results, setResults] = useState<SearchResultsSummary | null>(null)
+  const [results, setResults] = useState<JobSearchResultsResponse | null>(null)
   const [resultsError, setResultsError] = useState('')
   const [attempt, setAttempt] = useState(0)
   const terminal = isTerminal(progress.status)
@@ -23,17 +24,24 @@ function SearchProgress({ task }: { task: SearchTask }) {
   useEffect(() => {
     if (!terminal) return
     const controller = new AbortController()
-    getSearchResultsSummary(task.search_id, controller.signal).then((summary) => {
+    getSearchResults(task.search_id, controller.signal).then((summary) => {
       if (!controller.signal.aborted) { setResults(summary); setResultsError('') }
     }).catch((cause: unknown) => {
       if (!controller.signal.aborted) setResultsError(cause instanceof Error ? cause.message : 'Unable to load persisted results.')
     })
-    // Refresh persisted timestamps and full backend failure details once at termination.
+    return () => controller.abort()
+  }, [terminal, task.search_id, attempt])
+
+  useEffect(() => {
+    // A reopened terminal task already has persisted metadata. Refresh only
+    // when an active task terminates, independently of manual result retries.
+    if (!terminal || isTerminal(task.status)) return
+    const controller = new AbortController()
     getJobSearch(task.search_id, controller.signal).then((value) => {
       if (!controller.signal.aborted) setLatest(value)
     }).catch(() => { /* Event status remains authoritative if this refresh fails. */ })
     return () => controller.abort()
-  }, [terminal, task.search_id, attempt])
+  }, [terminal, task.search_id, task.status])
 
   const completed = progress.status === 'completed'
   const discovered = completed && results ? results.total_discovered : progress.discovered
@@ -86,12 +94,14 @@ function SearchProgress({ task }: { task: SearchTask }) {
             </div>
           </li>)}</ol>}
       </section>
-      {terminal && <section className="card" id="search-results" aria-labelledby="results-title">
-        <h2 id="results-title">Persisted results summary</h2>
-        {resultsError ? <><p role="alert" className="error-banner">Could not load persisted results: {resultsError}</p><button className="text-button" onClick={() => { setResultsError(''); setAttempt((n) => n + 1) }}>Reload results summary</button></> : results ?
-          <p className="notice">{results.total_extracted} qualifying jobs saved · {results.total_discovered} unique jobs discovered · {results.total_failed} extraction failures recorded.</p> : <p role="status">Loading persisted results…</p>}
-        <p className="search-note">The full results table and job presentation arrive in Step 49. This page keeps your existing search context.</p>
-      </section>}
+      <section className="card" id="search-results" aria-labelledby="results-title">
+        <h2 id="results-title">Job Results</h2>
+        {!terminal ? <p className="notice">{progress.status === 'pending' ? 'Your search is queued.' : 'Your search is collecting jobs.'} Saved results will load when the search finishes. Live extraction events above are not saved job records.</p> : resultsError ? <><p role="alert" className="error-banner">Could not load persisted results: {resultsError}</p><button className="text-button" onClick={() => { setResultsError(''); setAttempt((n) => n + 1) }}>Reload results summary</button></> : results ?
+          <><p className="notice">{results.total_extracted} qualifying jobs saved · {results.total_discovered} unique jobs discovered · {results.total_failed} extraction failures recorded.</p>
+          {results.jobs.length === 0 && <p className="notice">{progress.status === 'failed' ? 'No saved jobs are available from this failed search.' : 'No jobs were saved for this search.'}</p>}
+          {progress.status === 'failed' && results.jobs.length > 0 && <p className="notice">This search failed. Any saved results below may be incomplete.</p>}
+          <JobResults jobs={results.jobs} searchId={task.search_id} /></> : <p role="status">Loading persisted results…</p>}
+      </section>
       <Link className="text-link" to="/search">Back to Job Search</Link>
     </div>
   )
@@ -118,7 +128,7 @@ function LoadSearch({ searchId }: { searchId: string }) {
 export function SearchDetailsPage() {
   const { searchId } = useParams()
   return <>
-    <PageHeader title="Search Details" description="Your search request, live progress, and persisted result summary." />
+    <PageHeader title="Search Details" description="Your search request, live progress, and saved job results." />
     {isSearchId(searchId) ? <LoadSearch key={searchId.toLowerCase()} searchId={searchId.toLowerCase()} /> :
       <section className="card"><p role="alert">Invalid search ID. Use the full search UUID from a created search.</p>{searchId && <p>{searchId}</p>}<Link className="text-link" to="/search">Back to Job Search</Link></section>}
   </>

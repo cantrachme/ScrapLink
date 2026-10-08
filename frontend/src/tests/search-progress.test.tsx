@@ -71,7 +71,7 @@ describe('persisted search progress page', () => {
     expect(screen.getByText('Completed')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'View persisted results summary' })).toHaveAttribute('href', '#search-results')
     expect(stream().close).toHaveBeenCalledTimes(1)
-    expect(screen.getByText(/Step 49/)).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Job Results' })).toBeInTheDocument()
   })
   it('shows transient connection loss without treating a queued job as failed', async () => {
     setup(); await screen.findByText('Queued')

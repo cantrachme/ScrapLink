@@ -1,4 +1,4 @@
-import type { JobExtractionFailure, JobListing, JobSource } from './job'
+import type { JobExtractionFailure, PersistedJob, JobSource } from './job'
 
 export type SearchSource = Extract<JobSource, 'linkedin' | 'wellfound'>
 export type DatePosted = 'any' | '24h' | '7d' | '30d'
@@ -34,7 +34,7 @@ export interface JobSearchResultsResponse {
   status: string
   source: JobSource | null
   discovered_urls: string[]
-  jobs: JobListing[]
+  jobs: PersistedJob[]
   failures: JobExtractionFailure[]
   total_discovered: number
   total_extracted: number

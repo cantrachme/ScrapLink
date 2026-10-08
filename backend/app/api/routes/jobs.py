@@ -8,11 +8,13 @@ from sqlalchemy.orm import Session
 from backend.app.database import SessionLocal, get_db
 from backend.app.repositories.search_event_repository import SearchEventRepository
 from backend.app.repositories.search_repository import SearchRepository
+from backend.app.repositories.job_repository import JobRepository
 from backend.app.schemas.job import (
     JobSearchRequest,
     JobSearchResponse,
     JobSearchResultsResponse,
     JobSource,
+    PersistedJobResponse,
 )
 from backend.app.services.task_manager import SearchTask
 from backend.app.services.search_event_stream import stream_search_events
@@ -148,3 +150,11 @@ def get_search_events(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@router.get("/{job_id}", response_model=PersistedJobResponse)
+def get_job(job_id: UUID, db: Session = Depends(get_db)):
+    job = JobRepository.get_by_id(db, job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return PersistedJobResponse.model_validate(job, from_attributes=True)

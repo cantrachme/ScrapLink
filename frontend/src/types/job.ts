@@ -45,3 +45,9 @@ export interface JobExtractionFailure {
   job_url: string
   error: string
 }
+
+// Read-only database identity; never required from browser collectors.
+export interface PersistedJob extends JobListing {
+  id: string
+  updated_at: string
+}
