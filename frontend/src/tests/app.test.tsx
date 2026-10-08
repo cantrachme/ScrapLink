@@ -65,7 +65,7 @@ describe('application foundation', () => {
       screen.getByRole('heading', { name: 'Wellfound' }),
     ).toBeInTheDocument()
     expect(screen.getByRole('main')).toHaveFocus()
-    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+    expect(screen.getByLabelText(/Job title \/ keyword/)).toBeInTheDocument()
     fireEvent.click(within(nav).getByRole('link', { name: 'Dashboard' }))
     expect(await screen.findByText('Connected')).toBeInTheDocument()
     expect(

@@ -124,12 +124,12 @@ export function DashboardPage() {
               <h3>Room for your next discovery</h3>
               <p>
                 Search history and saved results are not connected to this
-                dashboard yet. The search workflow is being built.
+                dashboard yet. Create a search and follow its live progress.
               </p>
             </div>
           </div>
           <Link className="text-link" to="/search">
-            See what’s coming
+            Start a job search
             <Icon name="arrow" />
           </Link>
         </section>
@@ -137,7 +137,7 @@ export function DashboardPage() {
       <section className="workflow-section" aria-labelledby="workflow-title">
         <div className="section-heading">
           <h2 id="workflow-title">From search to possibility</h2>
-          <span>The workflow we’re building</span>
+          <span>Your discovery workflow</span>
         </div>
         <ol className="workflow-list">
           <li>

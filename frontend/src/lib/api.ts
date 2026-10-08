@@ -1,3 +1,6 @@
+import type { JobSearchRequest, JobSearchResponse, SearchTask } from '../types/search'
+import { isCount, isRecord, isSearchId, isSearchTask, isTaskStatus } from './search-contract'
+
 export const API_PATHS = {
   health: '/health',
   databaseHealth: '/health/db',
@@ -17,7 +20,7 @@ export interface HealthResponse {
 
 export class ApiError extends Error {
   readonly status: number | null
-  readonly kind: 'http' | 'network' | 'response'
+  readonly kind: 'http' | 'network' | 'response' | 'timeout'
 
   constructor(
     message: string,
@@ -40,33 +43,89 @@ export async function requestJson<T>(
 ): Promise<T> {
   const headers = new Headers(options.headers)
   headers.set('Accept', 'application/json')
-  let response: Response
+  const controller = new AbortController()
+  const abort = () => controller.abort(options.signal?.reason)
+  options.signal?.addEventListener('abort', abort, { once: true })
+  if (options.signal?.aborted) abort()
+  let timedOut = false
+  const timeout = window.setTimeout(() => {
+    timedOut = true
+    controller.abort()
+  }, 15000)
   try {
-    response = await fetch(path, { ...options, headers })
+    let response: Response
+    try {
+      response = await fetch(path, { ...options, headers, signal: controller.signal })
+    } catch (error) {
+      if (controller.signal.aborted) throw error
+      throw new ApiError('Unable to reach the backend. Check the connection and try again.', 'network', null, error)
+    }
+    if (!response.ok) {
+      let detail = ''
+      try {
+        const body: unknown = await response.json()
+        if (isRecord(body)) {
+          if (typeof body.detail === 'string') detail = body.detail
+          else if (Array.isArray(body.detail)) {
+            detail = body.detail.filter(isRecord).map((item) => {
+              const field = Array.isArray(item.loc) ? item.loc.filter((part) => part !== 'body').join('.') : ''
+              return typeof item.msg === 'string' ? `${field ? `${field}: ` : ''}${item.msg}` : ''
+            }).filter(Boolean).join('; ')
+          }
+        }
+      } catch { /* Proxies can return non-JSON errors. Keep the HTTP status. */ }
+      throw new ApiError(detail || `Request failed (HTTP ${response.status}).`, 'http', response.status)
+    }
+    try {
+      return (await response.json()) as T
+    } catch (error) {
+      if (controller.signal.aborted) throw error
+      throw new ApiError('The backend returned an invalid JSON response.', 'response', response.status, error)
+    }
   } catch (error) {
-    if (options.signal?.aborted) throw error
-    throw new ApiError('Unable to reach the backend.', 'network', null, error)
-  }
-  if (!response.ok) {
-    throw new ApiError(
-      `Request failed (HTTP ${response.status}).`,
-      'http',
-      response.status,
-    )
-  }
-  try {
-    return (await response.json()) as T
-  } catch (error) {
-    if (options.signal?.aborted) throw error
-    throw new ApiError(
-      'The backend returned an invalid JSON response.',
-      'response',
-      response.status,
-      error,
-    )
+    if (timedOut) throw new ApiError('The request timed out. The backend may still have accepted a submitted search.', 'timeout')
+    throw error
+  } finally {
+    window.clearTimeout(timeout)
+    options.signal?.removeEventListener('abort', abort)
   }
 }
 
 export function checkHealth(signal?: AbortSignal): Promise<HealthResponse> {
   return requestJson<HealthResponse>(API_PATHS.health, { signal })
+}
+
+const invalidResponse = () => new ApiError('The backend returned missing or malformed search fields.', 'response')
+
+export async function createJobSearch(request: JobSearchRequest, signal?: AbortSignal): Promise<JobSearchResponse> {
+  const value = await requestJson<unknown>(API_PATHS.createSearch, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request), signal,
+  })
+  if (!isRecord(value) || !isSearchId(value.search_id) || !isTaskStatus(value.status) || typeof value.message !== 'string') {
+    throw invalidResponse()
+  }
+  return { search_id: value.search_id, status: value.status, message: value.message }
+}
+
+export async function getJobSearch(searchId: string, signal?: AbortSignal): Promise<SearchTask> {
+  const value = await requestJson<unknown>(API_PATHS.search(searchId), { signal })
+  if (!isSearchTask(value) || value.search_id.toLowerCase() !== searchId.toLowerCase()) throw invalidResponse()
+  return value
+}
+
+// Step 48 consumes only the persisted summary, not unvalidated job records.
+export interface SearchResultsSummary {
+  search_id: string
+  status: string
+  total_discovered: number
+  total_extracted: number
+  total_failed: number
+}
+export async function getSearchResultsSummary(searchId: string, signal?: AbortSignal): Promise<SearchResultsSummary> {
+  const v = await requestJson<unknown>(API_PATHS.searchResults(searchId), { signal })
+  if (!isRecord(v) || v.search_id !== searchId || !isTaskStatus(v.status) ||
+    !isCount(v.total_discovered) || !isCount(v.total_extracted) || !isCount(v.total_failed)) throw invalidResponse()
+  return { search_id: searchId, status: v.status, total_discovered: v.total_discovered,
+    total_extracted: v.total_extracted, total_failed: v.total_failed }
 }
