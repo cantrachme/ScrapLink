@@ -236,3 +236,51 @@ def test_wellfound_jobs_application_is_rejected_before_browser_starts():
     with pytest.raises(ValueError, match="public /role/"):
         collector(JobSource.WELLFOUND, JobSearchRequest(source="wellfound", keyword="Python Developer"))
     assert not sessions
+
+
+@pytest.mark.parametrize("source", [JobSource.LINKEDIN, JobSource.WELLFOUND])
+def test_progress_tracks_unique_discovery_accepted_jobs_and_real_failures(source):
+    request = JobSearchRequest(source=source.value, keyword="Python Developer")
+    first, second, third = [build_paginated_search_url(source, request, n) for n in (1, 2, 3)]
+    good, old, undated, missing, broken = [job_url(source, n) for n in range(1, 6)]
+    calls, events = [], []
+    collector, sessions = make_collector({
+        first: listing(good, old, undated, missing, broken),
+        good: detail(), old: detail("2020-01-01"), undated: detail(None),
+        missing: FakeResponse("Not found", status=404), broken: "<h1>Missing company</h1>",
+        second: listing(good + "?tracking=again"),
+    }, calls)
+    with patch("backend.app.workers.browser_collector.datetime", FixedDatetime):
+        result = collector.collect_with_progress(source, request, lambda name, data: events.append((name, data)))
+    assert [name for name, _ in events] == [
+        "page_discovered", "job_extracted", "job_failed", "job_failed", "page_discovered",
+    ]
+    assert events[0][1] == {"page_number": 1, "new_jobs_discovered": 5, "total_discovered": 5}
+    assert events[-1][1] == {"page_number": 2, "new_jobs_discovered": 0, "total_discovered": 5}
+    assert events[1][1] == {
+        "job_url": good, "title": "Python Developer", "company": "Acme", "total_extracted": 1,
+    }
+    assert [data["total_failed"] for name, data in events if name == "job_failed"] == [1, 2]
+    assert [data["job_url"] for name, data in events if name == "job_failed"] == [missing, broken]
+    assert result.total_discovered == 5 and result.total_extracted == 1 and result.total_failed == 2
+    assert calls.count(good) == 1 and third not in calls
+    assert len(sessions) == 1 and sessions[0].closed
+
+
+@pytest.mark.parametrize("fail_on", ["page_discovered", "job_extracted", "job_failed"])
+def test_progress_callback_errors_propagate_and_close_browser(fail_on):
+    source = JobSource.LINKEDIN
+    request = JobSearchRequest(keyword="Python Developer", date_posted="any")
+    first = build_paginated_search_url(source, request, 1)
+    url = job_url(source, 1)
+    collector, sessions = make_collector({
+        first: listing(url), url: FakeResponse("Missing", status=404) if fail_on == "job_failed" else detail(),
+    }, [])
+
+    def progress(name, data):
+        if name == fail_on:
+            raise RuntimeError("Event persistence unavailable")
+
+    with pytest.raises(RuntimeError, match="Event persistence unavailable"):
+        collector.collect_with_progress(source, request, progress)
+    assert sessions[0].closed

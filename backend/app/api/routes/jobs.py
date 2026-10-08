@@ -1,10 +1,12 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from backend.app.database import get_db
+from backend.app.database import SessionLocal, get_db
+from backend.app.repositories.search_event_repository import SearchEventRepository
 from backend.app.repositories.search_repository import SearchRepository
 from backend.app.schemas.job import (
     JobSearchRequest,
@@ -13,6 +15,7 @@ from backend.app.schemas.job import (
     JobSource,
 )
 from backend.app.services.task_manager import SearchTask
+from backend.app.services.search_event_stream import stream_search_events
 
 
 router = APIRouter(prefix="/jobs", tags=["Jobs"])
@@ -45,6 +48,9 @@ def create_job_search(
         source=JobSource(request.source),
     )
 
+    SearchEventRepository.publish(db, task.search_id, "search_queued", {
+        "search_id": str(task.search_id), "status": "pending", "source": task.source,
+    })
     db.commit()
     db.refresh(task)
 
@@ -106,3 +112,39 @@ def get_job_search_results(
         )
 
     return results
+
+
+def parse_event_cursor(value: str | None) -> int:
+    if value is None:
+        return 0
+    # PostgreSQL INTEGER sequences; bound length before int conversion as well.
+    if not value.isascii() or not value.isdecimal() or len(value) > 10:
+        raise HTTPException(422, "Event cursor must be a nonnegative integer")
+    cursor = int(value)
+    if cursor > 2_147_483_647:
+        raise HTTPException(422, "Event cursor exceeds the sequence range")
+    return cursor
+
+
+@router.get("/search/{search_id}/events")
+def get_search_events(
+    search_id: UUID,
+    request: Request,
+    after: str | None = Query(default=None),
+    last_event_id: str | None = Header(default=None, alias="Last-Event-ID"),
+):
+    """Replay after the cursor; Last-Event-ID takes precedence over `after`."""
+    # Validate both supplied values, including the overridden cursor.
+    query_cursor = parse_event_cursor(after)
+    header_cursor = parse_event_cursor(last_event_id)
+    cursor = header_cursor if last_event_id is not None else query_cursor
+    # A synchronous route runs in FastAPI's thread pool. Do not use a yielded
+    # request session here: it could otherwise survive for the entire stream.
+    with SessionLocal() as db:
+        if repository.get(db, search_id) is None:
+            raise HTTPException(404, "Search task not found")
+    return StreamingResponse(
+        stream_search_events(request, search_id, cursor),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )

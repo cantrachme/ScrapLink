@@ -17,6 +17,7 @@ def test_database_tables_registered():
         "search_tasks",
         "search_task_jobs",
         "extraction_failures",
+        "search_events",
     }
 
     assert set(Base.metadata.tables.keys()) == expected

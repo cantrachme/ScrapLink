@@ -26,7 +26,7 @@ app.add_middleware(
     allow_origins=[settings.FRONTEND_URL],
     allow_credentials=False,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
-    allow_headers=["Content-Type", "Authorization"],
+    allow_headers=["Content-Type", "Authorization", "Last-Event-ID"],
 )
 
 app.include_router(jobs_router, prefix="/api/v1")

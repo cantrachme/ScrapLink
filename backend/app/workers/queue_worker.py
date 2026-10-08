@@ -6,6 +6,8 @@ from collections.abc import Callable
 from uuid import UUID
 
 from backend.app.database import SessionLocal
+from backend.app.repositories.search_event_repository import SearchEventRepository
+from backend.app.schemas.search_event import SEARCH_FAILURE_MESSAGE
 from backend.app.repositories.search_repository import (
     SearchRepository,
 )
@@ -35,6 +37,7 @@ class JobQueueWorker:
     def __init__(self, collector: Collector):
         self.collector = collector
         self.repository = SearchRepository()
+        self.events = SearchEventRepository()
 
     def run_once(
         self,
@@ -58,6 +61,10 @@ class JobQueueWorker:
             claimed_id = task.search_id
             source_value = task.source
             request_payload = dict(task.request_payload)
+            self.events.publish(db, claimed_id, "search_started", {
+                "search_id": str(claimed_id), "status": "running",
+                "source": source_value or request_payload["source"],
+            })
 
         # The claiming transaction has now committed.
         # Browser work must happen outside DB transactions.
@@ -77,7 +84,17 @@ class JobQueueWorker:
                 source.value,
             )
 
-            result = self.collector(source, request)
+            def publish_progress(event_type: str, payload: dict) -> None:
+                if event_type not in {"page_discovered", "job_extracted", "job_failed"}:
+                    raise ValueError("Collector emitted a non-progress event")
+                with SessionLocal.begin() as db:
+                    self.events.publish(db, claimed_id, event_type, payload)
+
+            collect_with_progress = getattr(self.collector, "collect_with_progress", None)
+            if callable(collect_with_progress):
+                result = collect_with_progress(source, request, publish_progress)
+            else:
+                result = self.collector(source, request)
 
             if result.source != source:
                 raise ValueError(
@@ -90,6 +107,12 @@ class JobQueueWorker:
                     claimed_id,
                     result,
                 )
+                self.events.publish(db, claimed_id, "search_completed", {
+                    "search_id": str(claimed_id), "status": "completed",
+                    "total_discovered": result.total_discovered,
+                    "total_extracted": result.total_extracted,
+                    "total_failed": result.total_failed,
+                })
 
             logger.info(
                 "Completed search %s",
@@ -108,6 +131,10 @@ class JobQueueWorker:
                     claimed_id,
                     f"{type(exc).__name__}: {exc}",
                 )
+                self.events.publish(db, claimed_id, "search_failed", {
+                    "search_id": str(claimed_id), "status": "failed",
+                    "error": SEARCH_FAILURE_MESSAGE,
+                })
 
         return True
 

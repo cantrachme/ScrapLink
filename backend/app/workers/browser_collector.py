@@ -8,6 +8,7 @@ from scrapling.fetchers import DynamicSession
 from scrapling.parser import Selector
 
 from backend.app.schemas.job import JobSearchRequest, JobSource
+from backend.app.schemas.search_event import JOB_FAILURE_MESSAGE, ProgressCallback
 from backend.app.services.job_deduplication import job_identity
 from backend.app.services.job_pipeline import (
     ExtractionFailure,
@@ -96,6 +97,17 @@ class BrowserCollector:
         return html
 
     def __call__(self, source: JobSource, search: JobSearchRequest) -> PipelineResult:
+        return self.collect_with_progress(source, search)
+
+    def collect_with_progress(
+        self, source: JobSource, search: JobSearchRequest,
+        progress: ProgressCallback | None = None,
+    ) -> PipelineResult:
+        """Callbacks are per invocation, synchronous, and may raise to abort.
+
+        Callers must close their DB transactions before entering this method.
+        Callback failures are deliberately outside fetch/extraction handlers.
+        """
         if source not in (JobSource.LINKEDIN, JobSource.WELLFOUND):
             raise ValueError(f"Unsupported job source: {source}")
         if search.source != source.value:
@@ -137,25 +149,46 @@ class BrowserCollector:
                         seen.add(key)
                         new_urls.append(job_url)
                 result.discovered_urls.extend(new_urls)
+                if progress is not None:
+                    progress("page_discovered", {
+                        "page_number": page_number,
+                        "new_jobs_discovered": len(new_urls),
+                        "total_discovered": result.total_discovered,
+                    })
                 if not new_urls:
                     break
 
                 for job_url in new_urls:
+                    previous_extracted = result.total_extracted
+                    previous_failed = result.total_failed
                     if not self._is_allowed_job_url(source, job_url):
                         result.failures.append(ExtractionFailure(
                             job_url=job_url, error="Unexpected source job URL",
                         ))
-                        continue
-                    try:
-                        fetch_url = self.detail_url_builder(source, job_url)
-                        html = self._fetch_html(session, fetch_url)
-                    except Exception as exc:
-                        logger.exception("Failed to fetch job: %s", job_url)
-                        result.failures.append(ExtractionFailure(
-                            job_url=job_url, error=f"{type(exc).__name__}: {exc}",
-                        ))
-                        continue
-                    self.pipeline.add_detail(result, search, job_url, html, now=reference)
+                    else:
+                        try:
+                            fetch_url = self.detail_url_builder(source, job_url)
+                            html = self._fetch_html(session, fetch_url)
+                        except Exception as exc:
+                            logger.exception("Failed to fetch job: %s", job_url)
+                            result.failures.append(ExtractionFailure(
+                                job_url=job_url, error=f"{type(exc).__name__}: {exc}",
+                            ))
+                        else:
+                            self.pipeline.add_detail(result, search, job_url, html, now=reference)
+                    if progress is not None:
+                        if result.total_extracted > previous_extracted:
+                            job = result.jobs[-1]
+                            progress("job_extracted", {
+                                "job_url": job.job_url, "title": job.title,
+                                "company": job.company,
+                                "total_extracted": result.total_extracted,
+                            })
+                        elif result.total_failed > previous_failed:
+                            progress("job_failed", {
+                                "job_url": job_url, "error": JOB_FAILURE_MESSAGE,
+                                "total_failed": result.total_failed,
+                            })
                     if result.total_extracted >= search.max_results:
                         return result
         return result
