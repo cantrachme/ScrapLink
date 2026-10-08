@@ -47,3 +47,24 @@ class JobSearchResponse(BaseModel):
     search_id: str
     status: str
     message: str
+
+
+
+
+from datetime import date
+
+
+class JobStatus(str, Enum):
+    ACTIVE = "active"
+    CLOSED = "closed"
+    UNKNOWN = "unknown"
+
+
+class JobListing(BaseModel):
+    title: str = Field(min_length=1)
+    company: str = Field(min_length=1)
+    location: str | None = None
+    job_url: str = Field(min_length=1)
+    source: str
+    posted_date: date | None = None
+    status: JobStatus = JobStatus.UNKNOWN
