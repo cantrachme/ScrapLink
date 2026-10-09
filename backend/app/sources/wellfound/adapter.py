@@ -201,7 +201,7 @@ class WellfoundJobAdapter(BaseJobSourceAdapter):
             ],
         )
 
-        if not title or not company:
+        if not title:
             raise ValueError(
                 "Missing required Wellfound job details"
             )
@@ -278,7 +278,7 @@ class WellfoundJobAdapter(BaseJobSourceAdapter):
             source_job_id=job_id,
             job_url=url,
             title=str(title).strip(),
-            company=str(company).strip(),
+            company=str(company or "").strip(),
             company_url=organization.get("sameAs"),
             description=description,
             location=location,

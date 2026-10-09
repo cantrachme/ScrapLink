@@ -39,6 +39,7 @@ export interface SearchFailed {
   error: 'Search execution failed' | 'Browser execution failed'
 }
 export interface SearchEventPayloadMap {
+  browser_action: { action: string }
   search_queued: SearchQueued
   search_started: SearchStarted
   page_discovered: PageDiscovered

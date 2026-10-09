@@ -157,3 +157,14 @@ The React hook already handles cumulative counters, replay and terminal closure,
 so Step 50 does not change its logic. New end-to-end tests assert the actual worker
 event order, per-search sequences, cursor replay and absence of duplicate terminal
 events, including concurrent recovery after an abrupt subprocess exit.
+
+### Visible browser actions
+
+`browser_action` carries `{ "action": "typed_keyword" }`, emitted only after
+that action succeeds. Allowed actions: `opened_source`, `focused_keyword`,
+`typed_keyword`, `submitted_search`, `inspected_results`, `scrolled_listing`,
+`opened_listing`, `inspected_description`, `returned_results`. Additional factual
+notices are `location_filter_local`, `filtered_job` and `manual_required`.
+The last reports a browser handoff, not scraping. Manual saves happen after the
+handoff completes and refresh persisted results through the API; they do not
+fabricate scraping events or reopen the terminal SSE stream.

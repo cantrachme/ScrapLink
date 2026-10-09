@@ -60,7 +60,7 @@ class JobRepository:
         # Always refresh these when the job is rediscovered.
         updates = {
             "title": stmt.excluded.title,
-            "company": stmt.excluded.company,
+            "company": func.coalesce(func.nullif(stmt.excluded.company, ""), Job.company),
             "updated_at": func.now(),
         }
 

@@ -108,7 +108,7 @@ class JobQueueWorker:
 
                 def publish_progress(event_type: str, payload: dict) -> None:
                     self.check_shutdown()
-                    if event_type not in {"page_discovered", "job_extracted", "job_failed"}:
+                    if event_type not in {"browser_action", "page_discovered", "job_extracted", "job_failed"}:
                         raise ValueError("Collector emitted a non-progress event")
                     with SessionLocal.begin() as db:
                         task = self.repository._get_locked(db, claimed_id)

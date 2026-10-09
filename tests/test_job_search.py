@@ -102,3 +102,35 @@ def test_task_status_updates():
     assert updated is not None
     assert updated.status == TaskStatus.RUNNING
     assert manager.get_task(task.search_id).status == TaskStatus.RUNNING
+
+
+def test_assisted_save_minimal_job_and_reject_wrong_source(monkeypatch):
+    from backend.app.models.job import Job
+    from backend.app.workers.live_browser import LiveBrowserCollector
+    from backend.app.workers.queue_worker import JobQueueWorker
+    from backend.app.schemas.job import JobSource
+    from uuid import UUID
+    saved_id = None
+    response = client.post('/api/v1/jobs/search', json={'source': 'wellfound', 'keyword': 'DevOps Engineer', 'location': 'London'})
+    sid = response.json()['search_id']
+    endpoint = f'/api/v1/jobs/search/{sid}/assisted-jobs'
+    url = f'https://wellfound.com/jobs/{uuid4().int}-devops'
+    body = {'title': 'DevOps Engineer', 'job_url': url}
+    assert client.post(endpoint, json=body).status_code == 409
+    worker = JobQueueWorker(LiveBrowserCollector(browser_opener=lambda url: None))
+    assert worker.run_once(UUID(sid))
+    try:
+        assert client.post(endpoint, json={**body, 'job_url': 'https://evil.invalid/jobs/1'}).status_code == 422
+        response = client.post(endpoint, json=body)
+        assert response.status_code == 200, response.text
+        saved_id = UUID(response.json()['id'])
+        assert response.json()['company'] == ''
+        assert response.json()['description'] is None
+        assert client.post(endpoint, json=body).json()['id'] == str(saved_id)
+        results = client.get(f'/api/v1/jobs/search/{sid}/results').json()
+        assert results['total_extracted'] == 1
+        assert results['jobs'][0]['title'] == 'DevOps Engineer'
+    finally:
+        if saved_id:
+            with SessionLocal.begin() as db:
+                db.execute(delete(Job).where(Job.id == saved_id))

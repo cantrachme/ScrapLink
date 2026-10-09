@@ -57,7 +57,7 @@ export function JobResults({ jobs, searchId }: { jobs: PersistedJob[]; searchId:
           <thead role="rowgroup"><tr role="row">{['Job title', 'Company', 'Location', 'Source', 'Employment type', 'Workplace type', 'Posted date', 'Action'].map((label) => <th key={label} scope="col" role="columnheader">{label}</th>)}</tr></thead>
           <tbody role="rowgroup">{visible.map((job) => <tr key={job.id} role="row">
             <td role="cell"><span className="mobile-cell-label" aria-hidden="true">Job title</span><Link className="job-title-link" to={detailUrl(job.id)}>{job.title}</Link></td>
-            <td role="cell"><span className="mobile-cell-label" aria-hidden="true">Company</span>{job.company}</td>
+            <td role="cell"><span className="mobile-cell-label" aria-hidden="true">Company</span>{textOrFallback(job.company)}</td>
             <td role="cell"><span className="mobile-cell-label" aria-hidden="true">Location</span>{textOrFallback(job.location)}</td>
             <td role="cell"><span className="mobile-cell-label" aria-hidden="true">Source</span>{SOURCE_LABELS[job.source]}<ExternalJobLink url={job.job_url}>Original listing</ExternalJobLink></td>
             <td role="cell"><span className="mobile-cell-label" aria-hidden="true">Employment type</span>{job.employment_type ? EMPLOYMENT_LABELS[job.employment_type] : NOT_SPECIFIED}</td>

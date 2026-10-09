@@ -204,7 +204,7 @@ class LinkedInJobAdapter(BaseJobSourceAdapter):
             ],
         )
 
-        if not title or not company:
+        if not title:
             raise ValueError(
                 "Missing required LinkedIn job details"
             )
@@ -244,7 +244,7 @@ class LinkedInJobAdapter(BaseJobSourceAdapter):
             source_job_id=extract_job_id(self.source, url),
             job_url=url,
             title=str(title).strip(),
-            company=str(company).strip(),
+            company=str(company or "").strip(),
             company_url=organization.get("sameAs"),
             location=location,
             description=description,

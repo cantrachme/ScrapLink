@@ -23,7 +23,7 @@ class DatePosted(str, Enum):
 
 
 class JobSearchRequest(BaseModel):
-    source: Literal["linkedin", "wellfound"] = "linkedin"
+    source: Literal["linkedin", "wellfound", "careerhub"] = "linkedin"
     keyword: str = Field(
         min_length=1,
         max_length=200,
@@ -36,6 +36,8 @@ class JobSearchRequest(BaseModel):
     )
 
     date_posted: Literal["any", "24h", "7d", "30d"] = "24h"
+    watch_mode: bool = True
+    watch_delay_seconds: float = Field(default=2.0, ge=1.5, le=3.0)
 
     max_results: int = Field(
         default=50,
@@ -69,6 +71,7 @@ class JobSearchResponse(BaseModel):
 class JobSource(str, Enum):
     LINKEDIN = "linkedin"
     WELLFOUND = "wellfound"
+    CAREERHUB = "careerhub"
     REALPYTHON_DEMO = "realpython_demo"
 
 
@@ -141,7 +144,8 @@ class JobListing(BaseModel):
 
     # Basic job details
     title: str = Field(min_length=1)
-    company: str = Field(min_length=1)
+    # Empty is the compatible representation for an unavailable company.
+    company: str = Field(default="", max_length=500)
 
     company_url: str | None = None
     location: str | None = None
@@ -226,3 +230,19 @@ class JobSearchResultsResponse(BaseModel):
     total_discovered: int = 0
     total_extracted: int = 0
     total_failed: int = 0
+
+
+class AssistedJobInput(BaseModel):
+    title: str = Field(min_length=1, max_length=500)
+    job_url: str = Field(max_length=2048)
+    location: str | None = Field(default=None, max_length=500)
+    workplace_type: WorkplaceType | None = None
+    description: str | None = Field(default=None, max_length=100000)
+
+    @field_validator("title", "job_url")
+    @classmethod
+    def nonempty(cls, value):
+        value = value.strip()
+        if not value:
+            raise ValueError("Cannot be empty")
+        return value

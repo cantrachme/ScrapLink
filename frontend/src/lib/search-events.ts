@@ -2,9 +2,23 @@ import type { SearchEvent, SearchEventName } from '../types/event'
 import { isCount, isRecord } from './search-contract'
 
 export const SEARCH_EVENT_NAMES: SearchEventName[] = [
-  'search_queued', 'search_started', 'page_discovered', 'job_extracted',
+  'browser_action', 'search_queued', 'search_started', 'page_discovered', 'job_extracted',
   'job_failed', 'search_completed', 'search_failed',
 ]
+const BROWSER_ACTIONS: Record<string, string> = {
+  opened_source: 'Chrome opened the selected website',
+  focused_keyword: 'Clicked the keyword search box',
+  typed_keyword: 'Typed your exact keyword',
+  location_filter_local: 'This source has no location input; location will be filtered from inspected listings',
+  submitted_search: 'Clicked Apply filters',
+  inspected_results: 'Inspected real search results',
+  scrolled_listing: 'Scrolled to a job listing',
+  opened_listing: 'Clicked and opened a job listing',
+  inspected_description: 'Inspected the job description',
+  returned_results: 'Returned to search results',
+  filtered_job: 'Excluded listing by your location or posting date filter',
+  manual_required: 'Opened Chrome for your manual search. Enter your keyword and location there, then save jobs below. Automated collection is unavailable for this source.',
+}
 const publicUrl = (value: unknown) => {
   if (typeof value !== 'string') return false
   try {
@@ -22,6 +36,10 @@ export function parseSearchEvent(name: SearchEventName, message: MessageEvent, s
     let valid = false
     let keys: string[] = []
     switch (name) {
+      case 'browser_action':
+        keys = ['action']
+        valid = typeof d.action === 'string' && Object.hasOwn(BROWSER_ACTIONS, d.action)
+        break
       case 'search_queued':
       case 'search_started':
         keys = ['search_id', 'status', 'source']
@@ -54,6 +72,7 @@ export function parseSearchEvent(name: SearchEventName, message: MessageEvent, s
 
 export function activityMessage(event: SearchEvent): string {
   switch (event.event) {
+    case 'browser_action': return BROWSER_ACTIONS[event.data.action]
     case 'search_queued': return 'Search queued'
     case 'search_started': return 'Search started'
     case 'page_discovered': return `Listing page ${event.data.page_number} processed — ${event.data.new_jobs_discovered} new jobs discovered`

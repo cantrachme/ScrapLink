@@ -1,3 +1,5 @@
+import { AssistedJobForm } from '../components/jobs/AssistedJobForm'
+import { SOURCE_LABELS } from '../lib/job-contract'
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { PageHeader } from '../components/ui/PageHeader'
@@ -67,6 +69,7 @@ function SearchProgress({ task }: { task: SearchTask }) {
         <p className={`connection-note connection-${progress.connection}`} role="status">{connectionLabels[progress.connection]}</p>
         {progress.status === 'pending' && <p className="notice">Waiting for a worker. Your search is safely queued; an active worker must claim it before collection begins.</p>}
         {progress.status === 'running' && <p className="notice">{progress.events.some((e) => ['page_discovered', 'job_extracted', 'job_failed'].includes(e.event)) ? 'The worker is collecting jobs.' : 'The search is running. Waiting for collection progress.'}</p>}
+        {completed && task.request.source !== 'careerhub' && <p className="notice">Chrome is ready for your manual search. Save jobs using the form below; no automated scraping was performed.</p>}
         {completed && <p className="notice">{hasFinalCounts ? extracted === 0 ? 'Search completed with zero qualifying jobs.' : `Search completed — ${extracted} qualifying jobs extracted.` : resultsError ? 'Search completed. Persisted result counts are currently unavailable.' : 'Search completed. Loading persisted result counts…'} <a className="text-link" href="#search-results">View persisted results summary</a></p>}
         {progress.status === 'failed' && <p className="error-banner" role="alert">Search failed — {latest.error || progress.error || 'The backend did not provide an error message.'}</p>}
         {progress.warning && <p className="notice" role="alert">{progress.warning}</p>}
@@ -75,7 +78,7 @@ function SearchProgress({ task }: { task: SearchTask }) {
         <p className="search-note">Date-filter exclusions are not failures. Extraction progress does not confirm final database persistence. Pages are available only from progress events.</p>
         <dl className="request-summary">
           <div><dt>Search ID</dt><dd>{task.search_id}</dd></div>
-          <div><dt>Source platform</dt><dd>{task.request.source === 'linkedin' ? 'LinkedIn' : 'Wellfound'}</dd></div>
+          <div><dt>Source platform</dt><dd>{SOURCE_LABELS[task.request.source]}</dd></div>
           <div><dt>Keyword</dt><dd>{task.request.keyword}</dd></div>
           <div><dt>Location</dt><dd>{task.request.location || 'All locations'}</dd></div>
           <div><dt>Posting date</dt><dd>{DATE_LABELS[task.request.date_posted]}</dd></div>
@@ -84,6 +87,7 @@ function SearchProgress({ task }: { task: SearchTask }) {
           <div><dt>Last persisted update</dt><dd><time dateTime={latest.updated_at}>{time(latest.updated_at)}</time></dd></div>
         </dl>
       </section>
+      {terminal && task.request.source !== 'careerhub' && <AssistedJobForm task={task} onSaved={() => setAttempt((n) => n + 1)} />}
       <section className="card" aria-labelledby="activity-title">
         <div className="section-heading"><h2 id="activity-title">Live activity</h2><span>Latest 100 events · oldest first</span></div>
         <p className="search-note">Events are ordered by sequence. Event timestamps are not provided by the backend stream.</p>

@@ -18,14 +18,14 @@ beforeEach(() => vi.stubGlobal('fetch', vi.fn().mockImplementation(() => Promise
 describe('search creation', () => {
   it('renders accessible controlled inputs and backend-compatible defaults', () => {
     setup()
-    expect(screen.getByLabelText('Job source')).toHaveValue('linkedin')
+    expect(screen.getByLabelText('Job source')).toHaveValue('careerhub')
     expect(screen.getByLabelText(/Job title/)).toBeRequired()
     expect(screen.getByPlaceholderText('Senior Software Engineer')).toHaveValue('')
-    expect(screen.getByLabelText('Location')).toHaveValue('United States')
-    expect(screen.getByLabelText('Posting date')).toHaveValue('24h')
+    expect(screen.getByLabelText('Location')).toHaveValue('')
+    expect(screen.getByLabelText('Posting date')).toHaveValue('any')
     expect(screen.getByLabelText('Maximum results')).toHaveValue(20)
     for (const label of ['Any time', 'Past 24 hours', 'Past 7 days', 'Past 30 days']) expect(screen.getByRole('option', { name: label })).toBeInTheDocument()
-    expect(screen.getByText(/does not launch Chrome/)).toBeInTheDocument()
+    expect(screen.getByText(/worker opens Chrome/)).toBeInTheDocument()
   })
   it.each(['', '   '])('rejects blank keyword %j without a request', (keyword) => {
     setup(); change(/Job title/, keyword); submit()
@@ -56,7 +56,7 @@ describe('search creation', () => {
     expect(url).toBe('/api/v1/jobs/search')
     expect(options?.method).toBe('POST')
     expect(new Headers(options?.headers).get('Content-Type')).toBe('application/json')
-    expect(JSON.parse(String(options?.body))).toEqual({ source: 'linkedin', keyword: 'Senior Software Engineer', location: 'New York', date_posted: '7d', max_results: 30 })
+    expect(JSON.parse(String(options?.body))).toEqual({ source: 'careerhub', keyword: 'Senior Software Engineer', location: 'New York', date_posted: '7d', max_results: 30, watch_mode: true, watch_delay_seconds: 2 })
   })
   it('prevents duplicate requests while pending and shows loading', async () => {
     let resolve!: (value: Response) => void
@@ -103,12 +103,10 @@ describe('search creation', () => {
       expect(screen.getByRole('button', { name: 'Start Search' })).toBeEnabled()
     } finally { vi.useRealTimers() }
   })
-  it('clearly rejects unsupported Wellfound combinations', () => {
-    setup(); change('Job source', 'wellfound'); change(/Job title/, 'Senior Engineer'); change('Location', 'London'); submit()
-    expect(screen.getByText(/Wellfound supports only:/)).toBeInTheDocument()
-    expect(screen.getByText(/Wellfound supports United States/)).toBeInTheDocument()
-    expect(screen.getByText(/Wellfound dates are filtered after extraction/)).toBeInTheDocument()
-    expect(fetch).not.toHaveBeenCalled()
+  it('accepts arbitrary Wellfound roles and locations for assisted search', async () => {
+    setup(); change('Job source', 'wellfound'); change(/Job title/, 'DevOps Engineer'); change('Location', 'London'); submit()
+    await screen.findByText(`Search destination: ${SEARCH_ID}`)
+    expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]?.body))).toMatchObject({ keyword: 'DevOps Engineer', location: 'London' })
   })
   it.each(['United States', 'New York', ''])('accepts supported Wellfound location %j', async (location) => {
     setup(); change('Job source', 'wellfound'); change(/Job title/, ' Python Developer '); change('Location', location); change('Posting date', 'any'); submit()

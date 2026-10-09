@@ -1,4 +1,4 @@
-"""Explicit development fixture transport; production source URLs stay canonical."""
+"""Isolated test fixture transport; never installed by the live worker."""
 
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer

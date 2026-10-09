@@ -1,6 +1,6 @@
 import type { JobExtractionFailure, PersistedJob, JobSource } from './job'
 
-export type SearchSource = Extract<JobSource, 'linkedin' | 'wellfound'>
+export type SearchSource = Extract<JobSource, 'linkedin' | 'wellfound' | 'careerhub'>
 export type DatePosted = 'any' | '24h' | '7d' | '30d'
 export type TaskStatus = 'pending' | 'running' | 'completed' | 'failed'
 
@@ -10,6 +10,8 @@ export interface JobSearchRequest {
   keyword: string // 1–200 characters, nonempty after trimming
   location?: string // default: United States; max 200 characters
   date_posted?: DatePosted // default: 24h
+  watch_mode?: boolean
+  watch_delay_seconds?: number
   max_results?: number // integer 1–500; default: 50
 }
 
@@ -23,7 +25,7 @@ export interface JobSearchResponse {
 export interface SearchTask {
   search_id: string
   status: TaskStatus
-  request: Required<JobSearchRequest>
+  request: Required<Omit<JobSearchRequest, 'watch_mode' | 'watch_delay_seconds'>> & Pick<JobSearchRequest, 'watch_mode' | 'watch_delay_seconds'>
   created_at: string
   updated_at: string
   error: string | null

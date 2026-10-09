@@ -50,8 +50,8 @@ export function DashboardPage() {
             One place to find them.
           </h2>
           <p>
-            Discover roles across LinkedIn and Wellfound, follow your search as
-            it runs, and explore the details that matter.
+            Watch Chrome search CareerHub, or search LinkedIn and Wellfound yourself
+            and save the jobs that interest you.
           </p>
           <Link className="button button-light" to="/search">
             Explore Job Search

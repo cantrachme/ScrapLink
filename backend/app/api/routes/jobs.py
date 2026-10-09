@@ -4,6 +4,13 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
+from sqlalchemy import select, func
+from sqlalchemy.dialects.postgresql import insert
+from backend.app.models.job import Job
+from backend.app.models.search import SearchTaskRecord, SearchTaskJob
+from backend.app.schemas.job import AssistedJobInput, JobListing
+from backend.app.services.job_deduplication import extract_job_id, normalize_job_url
+from backend.app.repositories.search_repository import utc_now
 
 from backend.app.database import SessionLocal, get_db
 from backend.app.repositories.search_event_repository import SearchEventRepository
@@ -158,3 +165,38 @@ def get_job(job_id: UUID, db: Session = Depends(get_db)):
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
     return PersistedJobResponse.model_validate(job, from_attributes=True)
+
+
+@router.post("/search/{search_id}/assisted-jobs", response_model=PersistedJobResponse)
+def save_assisted_job(search_id: UUID, request: AssistedJobInput, db: Session = Depends(get_db)):
+    """Save only user-supplied fields. Never fetch a restricted website."""
+    task = db.scalar(select(SearchTaskRecord).where(SearchTaskRecord.search_id == search_id).with_for_update())
+    if task is None:
+        raise HTTPException(404, "Search task not found")
+    if task.source not in ("linkedin", "wellfound"):
+        raise HTTPException(422, "Manual entry is available for assisted sources only")
+    if task.status not in ("completed", "failed"):
+        raise HTTPException(409, "Wait for the worker to open your browser before saving")
+    source = JobSource(task.source)
+    try:
+        job_id = extract_job_id(source, request.job_url)
+    except ValueError:
+        job_id = None
+    if job_id is None:
+        raise HTTPException(422, "Use an original HTTPS job listing URL from the selected source")
+    listing = JobListing(source=source, **request.model_dump())
+    existing = db.scalar(select(Job).join(SearchTaskJob).where(
+        SearchTaskJob.search_id == search_id, Job.source == task.source,
+        Job.job_url == normalize_job_url(source, request.job_url)))
+    if existing is None and task.total_extracted >= task.request_payload.get("max_results", 50):
+        raise HTTPException(409, "This search has reached its maximum results")
+    saved = JobRepository.upsert(db, listing)
+    db.execute(insert(SearchTaskJob).values(search_id=search_id, job_id=saved.id).on_conflict_do_nothing())
+    db.flush()
+    count = db.scalar(select(func.count()).select_from(SearchTaskJob).where(SearchTaskJob.search_id == search_id))
+    task.total_extracted = count
+    task.total_discovered = count
+    task.updated_at = utc_now()
+    db.commit()
+    db.refresh(saved)
+    return PersistedJobResponse.model_validate(saved, from_attributes=True)

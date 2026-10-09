@@ -83,7 +83,16 @@ class SearchFailed(EventPayload):
     error: Literal["Search execution failed", "Browser execution failed"]
 
 
+class BrowserAction(EventPayload):
+    action: Literal[
+        "opened_source", "focused_keyword", "typed_keyword", "location_filter_local",
+        "submitted_search", "inspected_results", "scrolled_listing", "opened_listing",
+        "inspected_description", "returned_results", "filtered_job", "manual_required",
+    ]
+
+
 EVENT_PAYLOADS: dict[str, type[EventPayload]] = {
+    "browser_action": BrowserAction,
     "search_queued": SearchQueued,
     "search_started": SearchStarted,
     "page_discovered": PageDiscovered,

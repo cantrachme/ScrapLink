@@ -1,6 +1,6 @@
 // JSON response contracts from backend/app/schemas/job.py.
 // Defaulted response fields are serialized by FastAPI; nullable is not optional.
-export type JobSource = 'linkedin' | 'wellfound' | 'realpython_demo'
+export type JobSource = 'linkedin' | 'wellfound' | 'careerhub' | 'realpython_demo'
 export type JobStatus = 'active' | 'closed' | 'unknown'
 export type WorkplaceType = 'remote' | 'hybrid' | 'onsite'
 export type EmploymentType =

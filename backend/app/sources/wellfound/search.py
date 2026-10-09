@@ -4,7 +4,7 @@ from backend.app.schemas.job import JobSearchRequest, JobSource
 
 WELLFOUND_BASE_URL = "https://wellfound.com"
 
-# Start with role pages that have been verified.
+# Legacy fixture/parser URL mappings only. Live Wellfound uses assisted search.
 SUPPORTED_ROLES = {
     "software engineer": "software-engineer",
     "python developer": "python-developer",
@@ -23,7 +23,7 @@ def build_wellfound_search_url(
     search: JobSearchRequest,
 ) -> str:
     """
-    Build a verified Wellfound public role-search URL.
+    Build a legacy Wellfound role URL for isolated fixtures/parser tests.
 
     Arbitrary keyword searches are unsupported. Posting windows are
     validated locally after extraction; public role pages have no date filter.

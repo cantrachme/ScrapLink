@@ -26,21 +26,20 @@ def test_invalid_cli_arguments(arguments):
     assert exc.value.code == 2
 
 
-def test_fixture_requires_development(monkeypatch):
+def test_fixture_requires_test_environment(monkeypatch):
     monkeypatch.setattr(run_worker.settings, "APP_ENV", "production")
     with pytest.raises(SystemExit):
         run_worker.main(["--mode", "fixture", "--once"])
 
 
-@pytest.mark.parametrize("sources", ["", "linkedin,unapproved"])
-def test_live_requires_explicit_authorization(monkeypatch, sources):
-    monkeypatch.setattr(run_worker.settings, "AUTHORIZED_LIVE_SOURCES", sources)
-    with pytest.raises(SystemExit):
-        run_worker.main(["--mode", "live", "--once"])
+def test_live_can_start_with_no_pending_tasks(monkeypatch):
+    monkeypatch.setattr(JobQueueWorker, "recover_stale", lambda *args: 0)
+    monkeypatch.setattr(JobQueueWorker, "run_once", lambda *args: False)
+    assert run_worker.main(["--mode", "live", "--once"]) == 0
 
 
 def test_fixture_worker_startup_without_pending_tasks(monkeypatch, caplog):
-    monkeypatch.setattr(run_worker.settings, "APP_ENV", "development")
+    monkeypatch.setattr(run_worker.settings, "APP_ENV", "test")
     monkeypatch.setattr(run_worker.settings, "BROWSER_HEADLESS", False)
     actual_run_once = JobQueueWorker.run_once
     called = []
@@ -85,7 +84,6 @@ def test_sigterm_uses_cooperative_shutdown_and_restores_handlers(monkeypatch):
         handlers[sig] = handler
         return "original"
     monkeypatch.setattr(run_worker.signal, "signal", signal)
-    monkeypatch.setattr(run_worker.settings, "AUTHORIZED_LIVE_SOURCES", "linkedin")
     def run(self, *args):
         assert not self.stop_event.is_set()
         handlers[run_worker.signal.SIGTERM](run_worker.signal.SIGTERM, None)

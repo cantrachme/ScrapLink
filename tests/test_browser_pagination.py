@@ -105,7 +105,7 @@ def test_multiple_pages_filter_dedupe_and_preserve_details(source, caplog):
         first: listing(old, old + "?trk=duplicate", undated, missing, broken, good1),
         second: listing(duplicate, missing + "?utm_source=again", old, good2, unused),
         old: detail("2026-10-06T12:00:00Z"), undated: detail(None),
-        missing: FakeResponse("Not found", status=404), broken: "<h1>Missing company</h1>",
+        missing: FakeResponse("Not found", status=404), broken: "<p>Missing required title</p>",
         good1: detail(), good2: detail("2026-10-08T15:30:00+05:30"),
     }
     calls = []
@@ -247,7 +247,7 @@ def test_progress_tracks_unique_discovery_accepted_jobs_and_real_failures(source
     collector, sessions = make_collector({
         first: listing(good, old, undated, missing, broken),
         good: detail(), old: detail("2020-01-01"), undated: detail(None),
-        missing: FakeResponse("Not found", status=404), broken: "<h1>Missing company</h1>",
+        missing: FakeResponse("Not found", status=404), broken: "<p>Missing required title</p>",
         second: listing(good + "?tracking=again"),
     }, calls)
     with patch("backend.app.workers.browser_collector.datetime", FixedDatetime):

@@ -1,7 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useSearchEvents } from '../hooks/useSearchEvents'
-import { SEARCH_EVENT_NAMES } from '../lib/search-events'
+import { parseSearchEvent, SEARCH_EVENT_NAMES } from '../lib/search-events'
 import { completed, extracted, failure, installEventSource, json, MockEventSource, OTHER_ID, page, queued, SEARCH_ID, started, stream, task } from './search-fixtures'
 
 beforeEach(() => { installEventSource(); vi.stubGlobal('fetch', vi.fn().mockImplementation(() => Promise.resolve(json(task)))) })
@@ -136,4 +136,14 @@ describe('native SSE progress', () => {
     expect(result.current.discovered).toBe(18)
     expect(result.current.pages).toBe(1)
   })
+})
+
+it('accepts browser actions but rejects fabricated or arbitrary action names', () => {
+  const event = parseSearchEvent('browser_action', new MessageEvent('browser_action', {
+    lastEventId: '3', data: JSON.stringify({ action: 'typed_keyword' }),
+  }), SEARCH_ID)
+  expect(event?.event).toBe('browser_action')
+  expect(parseSearchEvent('browser_action', new MessageEvent('browser_action', {
+    lastEventId: '4', data: JSON.stringify({ action: 'fake_scraping' }),
+  }), SEARCH_ID)).toBeNull()
 })
