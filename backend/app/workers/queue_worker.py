@@ -97,12 +97,16 @@ class JobQueueWorker:
                 request_payload = dict(task.request_payload)
                 self.events.publish(db, claimed_id, "search_started", {
                     "search_id": str(claimed_id), "status": "running",
-                    "source": source_value or request_payload["source"],
+                    "source": "multi" if request_payload.get("mode") == "active_jobs" else source_value or request_payload["source"],
                 })
 
             try:
                 self.check_shutdown()
                 request = JobSearchRequest.model_validate(request_payload)
+                if request.mode == "active_jobs":
+                    from backend.app.workers.active_jobs import run_active_jobs
+                    run_active_jobs(self, claimed_id, request)
+                    return True
                 source = JobSource(source_value or request.source)
                 logger.info("Processing search %s (%s)", claimed_id, source.value)
 

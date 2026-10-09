@@ -5,7 +5,7 @@ import { EMPLOYMENT_LABELS, SOURCE_LABELS, WORKPLACE_LABELS } from '../../lib/jo
 import { dateValue, formatDate, NOT_SPECIFIED, postingDate, textOrFallback } from '../../lib/job-format'
 import { ExternalJobLink } from './ExternalJobLink'
 
-export function JobResults({ jobs, searchId }: { jobs: PersistedJob[]; searchId: string }) {
+export function JobResults({ jobs, searchId, active = false }: { jobs: PersistedJob[]; searchId: string; active?: boolean }) {
   const [title, setTitle] = useState('')
   const [company, setCompany] = useState('')
   const [source, setSource] = useState('')
@@ -39,7 +39,7 @@ export function JobResults({ jobs, searchId }: { jobs: PersistedJob[]; searchId:
   const offset = (currentPage - 1) * pageSize
   const visible = filtered.slice(offset, offset + pageSize)
   function change(setter: (value: string) => void, value: string) { setter(value); setPage(1) }
-  const detailUrl = (id: string) => `/jobs/${id}?searchId=${encodeURIComponent(searchId)}`
+  const detailUrl = (id: string) => `/jobs/${id}?searchId=${encodeURIComponent(searchId)}${active ? '&active=1' : ''}`
   return <>
     <p className="search-note">{loaded.length} loaded jobs. Filters and pages apply to this search’s saved results.</p>
     {loaded.length > 0 && <>

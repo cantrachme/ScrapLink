@@ -8,7 +8,7 @@ from sqlalchemy import select, func
 from sqlalchemy.dialects.postgresql import insert
 from backend.app.models.job import Job
 from backend.app.models.search import SearchTaskRecord, SearchTaskJob
-from backend.app.schemas.job import AssistedJobInput, JobListing
+from backend.app.schemas.job import ActiveJobsRequest, AssistedJobInput, JobListing
 from backend.app.services.job_deduplication import extract_job_id, normalize_job_url
 from backend.app.repositories.search_repository import utc_now
 
@@ -54,11 +54,11 @@ def create_job_search(
     task = repository.create(
         db,
         request,
-        source=JobSource(request.source),
+        source=None if request.mode == "active_jobs" else JobSource(request.source),
     )
 
     SearchEventRepository.publish(db, task.search_id, "search_queued", {
-        "search_id": str(task.search_id), "status": "pending", "source": task.source,
+        "search_id": str(task.search_id), "status": "pending", "source": task.source or "multi",
     })
     db.commit()
     db.refresh(task)
@@ -68,6 +68,12 @@ def create_job_search(
         status=task.status,
         message="Search task created. Worker execution pending.",
     )
+
+
+@router.post("/active", response_model=JobSearchResponse, status_code=status.HTTP_202_ACCEPTED)
+def create_active_jobs(request: ActiveJobsRequest, db: Session = Depends(get_db)):
+    return create_job_search(JobSearchRequest(
+        mode="active_jobs", keyword="", location="", **request.model_dump()), db)
 
 
 @router.get(
@@ -140,6 +146,7 @@ def get_search_events(
     search_id: UUID,
     request: Request,
     after: str | None = Query(default=None),
+    follow: bool = Query(default=False),
     last_event_id: str | None = Header(default=None, alias="Last-Event-ID"),
 ):
     """Replay after the cursor; Last-Event-ID takes precedence over `after`."""
@@ -150,10 +157,13 @@ def get_search_events(
     # A synchronous route runs in FastAPI's thread pool. Do not use a yielded
     # request session here: it could otherwise survive for the entire stream.
     with SessionLocal() as db:
-        if repository.get(db, search_id) is None:
+        task = repository.get(db, search_id)
+        if task is None:
             raise HTTPException(404, "Search task not found")
+        if follow and task.request_payload.get("mode") != "active_jobs":
+            raise HTTPException(422, "Continuous updates are available for Active Jobs only")
     return StreamingResponse(
-        stream_search_events(request, search_id, cursor),
+        stream_search_events(request, search_id, cursor, follow=follow),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
@@ -173,30 +183,39 @@ def save_assisted_job(search_id: UUID, request: AssistedJobInput, db: Session = 
     task = db.scalar(select(SearchTaskRecord).where(SearchTaskRecord.search_id == search_id).with_for_update())
     if task is None:
         raise HTTPException(404, "Search task not found")
-    if task.source not in ("linkedin", "wellfound"):
+    active = task.request_payload.get("mode") == "active_jobs"
+    if not active and task.source not in ("linkedin", "wellfound"):
         raise HTTPException(422, "Manual entry is available for assisted sources only")
-    if task.status not in ("completed", "failed"):
+    if task.status not in (("running", "completed", "failed") if active else ("completed", "failed")):
         raise HTTPException(409, "Wait for the worker to open your browser before saving")
-    source = JobSource(task.source)
+    if active and request.source is None:
+        raise HTTPException(422, "Select the original listing source")
+    if not active and request.source and request.source != task.source:
+        raise HTTPException(422, "Listing source must match the search")
+    source = JobSource(request.source if active else task.source)
     try:
         job_id = extract_job_id(source, request.job_url)
     except ValueError:
         job_id = None
     if job_id is None:
         raise HTTPException(422, "Use an original HTTPS job listing URL from the selected source")
-    listing = JobListing(source=source, **request.model_dump())
+    listing = JobListing(source=source, **request.model_dump(exclude={"source"}))
     existing = db.scalar(select(Job).join(SearchTaskJob).where(
-        SearchTaskJob.search_id == search_id, Job.source == task.source,
-        Job.job_url == normalize_job_url(source, request.job_url)))
+        SearchTaskJob.search_id == search_id, Job.source == source.value,
+        (Job.source_job_id == job_id) if active else (Job.job_url == normalize_job_url(source, request.job_url))))
     if existing is None and task.total_extracted >= task.request_payload.get("max_results", 50):
         raise HTTPException(409, "This search has reached its maximum results")
-    saved = JobRepository.upsert(db, listing)
+    saved = JobRepository.upsert_active(db, listing) if active else JobRepository.upsert(db, listing)
     db.execute(insert(SearchTaskJob).values(search_id=search_id, job_id=saved.id).on_conflict_do_nothing())
     db.flush()
     count = db.scalar(select(func.count()).select_from(SearchTaskJob).where(SearchTaskJob.search_id == search_id))
     task.total_extracted = count
-    task.total_discovered = count
+    task.total_discovered = max(task.total_discovered, count)
     task.updated_at = utc_now()
+    if active:
+        SearchEventRepository.publish(db, search_id, "job_saved", {
+            "job_id": str(saved.id), "source": source.value, "total_extracted": count,
+        })
     db.commit()
     db.refresh(saved)
     return PersistedJobResponse.model_validate(saved, from_attributes=True)

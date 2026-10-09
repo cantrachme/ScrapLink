@@ -57,6 +57,9 @@ class LiveBrowserCollector:
     def collect_with_progress(self, source, search, progress=None):
         if source.value != search.source:
             raise ValueError("Search request source must match collector source")
+        if search.mode == "active_jobs":
+            from backend.app.workers.active_browser import collect_active_source
+            return collect_active_source(self, source, search, progress)
         result = PipelineResult(source=source)
         def emit(action):
             if progress:

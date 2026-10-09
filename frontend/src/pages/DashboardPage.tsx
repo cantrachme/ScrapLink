@@ -1,3 +1,4 @@
+import { ActiveJobsButton } from '../components/jobs/ActiveJobsButton'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { PageHeader } from '../components/ui/PageHeader'
@@ -53,6 +54,7 @@ export function DashboardPage() {
             Watch Chrome search CareerHub, or search LinkedIn and Wellfound yourself
             and save the jobs that interest you.
           </p>
+          <ActiveJobsButton />
           <Link className="button button-light" to="/search">
             Explore Job Search
             <Icon name="arrow" />

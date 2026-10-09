@@ -39,6 +39,8 @@ export interface SearchFailed {
   error: 'Search execution failed' | 'Browser execution failed'
 }
 export interface SearchEventPayloadMap {
+  job_saved: { job_id: string; source: 'linkedin' | 'wellfound'; total_extracted: number }
+  source_status: { source: 'linkedin' | 'wellfound'; status: string }
   browser_action: { action: string }
   search_queued: SearchQueued
   search_started: SearchStarted

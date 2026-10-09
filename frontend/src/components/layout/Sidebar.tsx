@@ -1,3 +1,4 @@
+import { ActiveJobsButton } from '../jobs/ActiveJobsButton'
 import { NavLink } from 'react-router'
 import { Icon } from '../ui/Icon'
 
@@ -54,6 +55,7 @@ export function Sidebar({
             <Icon name="search" />
             <span className="sidebar-label">Job Search</span>
           </NavLink>
+          <ActiveJobsButton onStarted={onNavigate} />
         </nav>
         <div className="reserved-navigation sidebar-label">
           <p className="nav-caption">SEARCH WORKSPACE</p>

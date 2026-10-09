@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     POSTGRES_PASSWORD: str = ""
 
 
+    # Explicit operator record of platform permission; empty means assisted only.
+    ACTIVE_JOBS_AUTHORIZATIONS: dict[str, str] = {}
     BROWSER_HEADLESS: bool = False
     BROWSER_TIMEOUT_MS: int = 30000
     FRONTEND_URL: str = "http://localhost:5173"

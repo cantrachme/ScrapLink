@@ -6,6 +6,7 @@ export type TaskStatus = 'pending' | 'running' | 'completed' | 'failed'
 
 // Defaulted request properties may be omitted; none accepts null.
 export interface JobSearchRequest {
+  mode?: 'search' | 'active_jobs'
   source?: SearchSource // default: linkedin
   keyword: string // 1–200 characters, nonempty after trimming
   location?: string // default: United States; max 200 characters
@@ -25,13 +26,14 @@ export interface JobSearchResponse {
 export interface SearchTask {
   search_id: string
   status: TaskStatus
-  request: Required<Omit<JobSearchRequest, 'watch_mode' | 'watch_delay_seconds'>> & Pick<JobSearchRequest, 'watch_mode' | 'watch_delay_seconds'>
+  request: Required<Omit<JobSearchRequest, 'watch_mode' | 'watch_delay_seconds' | 'mode'>> & Pick<JobSearchRequest, 'watch_mode' | 'watch_delay_seconds' | 'mode'>
   created_at: string
   updated_at: string
   error: string | null
 }
 
 export interface JobSearchResultsResponse {
+  source_statuses?: Record<string, string>
   search_id: string
   status: string
   source: JobSource | null

@@ -1,8 +1,8 @@
 import type { SearchEvent, SearchEventName } from '../types/event'
-import { isCount, isRecord } from './search-contract'
+import { isCount, isRecord, isSearchId } from './search-contract'
 
 export const SEARCH_EVENT_NAMES: SearchEventName[] = [
-  'browser_action', 'search_queued', 'search_started', 'page_discovered', 'job_extracted',
+  'job_saved', 'source_status', 'browser_action', 'search_queued', 'search_started', 'page_discovered', 'job_extracted',
   'job_failed', 'search_completed', 'search_failed',
 ]
 const BROWSER_ACTIONS: Record<string, string> = {
@@ -10,14 +10,14 @@ const BROWSER_ACTIONS: Record<string, string> = {
   focused_keyword: 'Clicked the keyword search box',
   typed_keyword: 'Typed your exact keyword',
   location_filter_local: 'This source has no location input; location will be filtered from inspected listings',
-  submitted_search: 'Clicked Apply filters',
+  submitted_search: 'Applied source search or sort controls',
   inspected_results: 'Inspected real search results',
   scrolled_listing: 'Scrolled to a job listing',
-  opened_listing: 'Clicked and opened a job listing',
+  opened_listing: 'Opened a job listing in Chrome',
   inspected_description: 'Inspected the job description',
   returned_results: 'Returned to search results',
   filtered_job: 'Excluded listing by your location or posting date filter',
-  manual_required: 'Opened Chrome for your manual search. Enter your keyword and location there, then save jobs below. Automated collection is unavailable for this source.',
+  manual_required: 'Opened Chrome for manual browsing. Save permitted listing details below. Automated collection is unavailable for this source.',
 }
 const publicUrl = (value: unknown) => {
   if (typeof value !== 'string') return false
@@ -36,6 +36,14 @@ export function parseSearchEvent(name: SearchEventName, message: MessageEvent, s
     let valid = false
     let keys: string[] = []
     switch (name) {
+      case 'job_saved':
+        keys = ['job_id', 'source', 'total_extracted']
+        valid = isSearchId(d.job_id) && ['linkedin', 'wellfound'].includes(String(d.source)) && isCount(d.total_extracted) && d.total_extracted >= 1
+        break
+      case 'source_status':
+        keys = ['source', 'status']
+        valid = ['linkedin', 'wellfound'].includes(String(d.source)) && ['collecting', 'completed', 'authorization_required', 'access_blocked', 'failed', 'limit_reached'].includes(String(d.status))
+        break
       case 'browser_action':
         keys = ['action']
         valid = typeof d.action === 'string' && Object.hasOwn(BROWSER_ACTIONS, d.action)
@@ -72,6 +80,8 @@ export function parseSearchEvent(name: SearchEventName, message: MessageEvent, s
 
 export function activityMessage(event: SearchEvent): string {
   switch (event.event) {
+    case 'job_saved': return `Job saved from ${event.data.source} — ${event.data.total_extracted} saved in total`
+    case 'source_status': return `${event.data.source}: ${event.data.status.replaceAll('_', ' ')}`
     case 'browser_action': return BROWSER_ACTIONS[event.data.action]
     case 'search_queued': return 'Search queued'
     case 'search_started': return 'Search started'

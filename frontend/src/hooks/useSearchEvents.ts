@@ -39,6 +39,7 @@ function reduce(state: Progress, action: Action): Progress {
       next.pages = Math.max(next.pages ?? 0, e.data.page_number)
       next.discovered = Math.max(next.discovered, e.data.total_discovered)
       break
+    case 'job_saved':
     case 'job_extracted': next.extracted = Math.max(next.extracted, e.data.total_extracted); break
     case 'job_failed': next.failed = Math.max(next.failed, e.data.total_failed); break
     case 'search_completed':
@@ -53,17 +54,17 @@ function reduce(state: Progress, action: Action): Progress {
   return next
 }
 
-export function useSearchEvents(task: SearchTask) {
+export function useSearchEvents(task: SearchTask, follow = false) {
   const [state, dispatch] = useReducer(reduce, task, initial)
   const { search_id: searchId, status, error } = task
   useEffect(() => {
     dispatch({ type: 'reset', task: { status, error } })
-    if (isTerminal(status)) return
+    if (isTerminal(status) && !follow) return
     if (typeof EventSource === 'undefined') {
       dispatch({ type: 'connection', connection: 'unavailable' })
       return
     }
-    const stream = new EventSource(API_PATHS.searchEvents(searchId))
+    const stream = new EventSource(API_PATHS.searchEvents(searchId) + (follow ? '?follow=true' : ''))
     const seen = new Set<string>()
     const controller = new AbortController()
     let closed = false
@@ -75,7 +76,7 @@ export function useSearchEvents(task: SearchTask) {
       dispatch({ type: 'connection', connection: stream.readyState === 2 ? 'unavailable' : 'reconnecting' })
       // One reconciliation on disconnection, never a competing reconnect loop.
       // This also closes streams for historical terminal tasks without events.
-      if (checking) return
+      if (checking || follow) return
       checking = true
       getJobSearch(searchId, controller.signal).then((latest) => {
         if (!closed && isTerminal(latest.status)) {
@@ -93,7 +94,10 @@ export function useSearchEvents(task: SearchTask) {
         if (seen.has(event.id)) return
         seen.add(event.id)
         dispatch({ type: 'event', event })
-        if (event.event === 'search_completed' || event.event === 'search_failed') close()
+        if (event.event === 'search_completed' || event.event === 'search_failed') {
+          if (follow) dispatch({ type: 'connection', connection: 'live' })
+          else close()
+        }
       }
       stream.addEventListener(name, listener)
       return { name, listener }
@@ -107,6 +111,6 @@ export function useSearchEvents(task: SearchTask) {
       stream.removeEventListener('open', onOpen)
       stream.removeEventListener('error', onError)
     }
-  }, [searchId, status, error])
+  }, [searchId, status, error, follow])
   return state
 }

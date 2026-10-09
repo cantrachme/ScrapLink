@@ -35,7 +35,10 @@ from backend.app.workers.queue_worker import JobQueueWorker
 
 
 @pytest.fixture
-def workflow():
+def workflow(monkeypatch):
+    # Controlled HTML fixtures must not depend on permission for live scraping.
+    from backend.app.config import settings
+    monkeypatch.setattr(settings, "ACTIVE_JOBS_AUTHORIZATIONS", {})
     ids = []
     job_ids = tuple(str(uuid4().int) for _ in range(4))
     site = FixtureSite("http://127.0.0.1:8765", job_ids)
@@ -217,7 +220,11 @@ def test_failed_search_terminal_event_and_failure_audit(workflow, monkeypatch, f
     assert worker.run_once(search_id)
     assert not worker.run_once(search_id)
     assert worker.recover_stale(1, search_id=search_id) == 0
-    assert workflow.client.get(path(search_id)).json()["status"] == "failed"
+    task = workflow.client.get(path(search_id)).json()
+    assert task["status"] == "failed"
+    if failure == "invalid_source":
+        assert task["error"] == "ValueError: Authorized source configuration is missing"
+        assert workflow.calls == []
     saved = workflow.client.get(path(search_id) + "/results").json()
     assert saved["jobs"] == []
     if failure == "details":

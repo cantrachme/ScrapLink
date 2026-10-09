@@ -2,7 +2,7 @@
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -227,8 +227,9 @@ class SearchRepository:
             )
             .where(SearchTaskJob.search_id == task.search_id)
             .order_by(
-                SearchTaskJob.discovered_at,
-                SearchTaskJob.job_id,
+                *([func.coalesce(Job.posted_at, Job.posted_date).desc().nulls_last()]
+                  if task.request_payload.get("mode") == "active_jobs" else []),
+                SearchTaskJob.discovered_at, SearchTaskJob.job_id,
             )
         ).all()
 
@@ -250,6 +251,7 @@ class SearchRepository:
 
         failures = [
             JobExtractionFailure(
+                source=failure.source,
                 job_url=failure.job_url or "",
                 error=failure.error,
             )
@@ -265,7 +267,14 @@ class SearchRepository:
             )
         )
 
+        from backend.app.models.search_event import SearchEvent
+        source_statuses = {}
+        for event in db.scalars(select(SearchEvent).where(
+                SearchEvent.search_id == task.search_id,
+                SearchEvent.event_type == "source_status").order_by(SearchEvent.sequence)):
+            source_statuses[event.payload["source"]] = event.payload["status"]
         return JobSearchResultsResponse(
+            source_statuses=source_statuses,
             search_id=str(task.search_id),
             status=task.status,
             source=JobSource(task.source) if task.source else None,

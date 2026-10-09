@@ -42,7 +42,7 @@ def format_event(event: SearchEventData) -> str:
 
 
 async def stream_search_events(
-    request: Request, search_id: UUID, after: int,
+    request: Request, search_id: UUID, after: int, *, follow: bool = False,
 ) -> AsyncIterator[str]:
     last_sent = monotonic()
     while not await request.is_disconnected():
@@ -58,7 +58,7 @@ async def stream_search_events(
             after = event.sequence
             terminal = terminal or event.event_type in TERMINAL_EVENTS
             last_sent = monotonic()
-        if terminal and len(events) < BATCH_SIZE:
+        if terminal and len(events) < BATCH_SIZE and not follow:
             return
         if len(events) == BATCH_SIZE:
             continue  # Drain replay without imposing a delay per batch.

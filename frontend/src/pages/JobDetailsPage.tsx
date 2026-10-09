@@ -68,7 +68,7 @@ export function JobDetailsPage() {
   const searchId = params.get('searchId')
   return <>
     <PageHeader title="Job Details" description="Get to know an opportunity beyond its title." />
-    <div className="job-back-link">{isSearchId(searchId) ? <Link className="text-link" to={`/searches/${searchId.toLowerCase()}`}>Back to search results</Link> : <Link className="text-link" to="/search">Back to Job Search</Link>}</div>
+    <div className="job-back-link">{isSearchId(searchId) ? <Link className="text-link" to={`/${params.get('active') === '1' ? 'active-jobs' : 'searches'}/${searchId.toLowerCase()}`}>Back to search results</Link> : <Link className="text-link" to="/search">Back to Job Search</Link>}</div>
     {isSearchId(jobId) ? <LoadJob key={jobId.toLowerCase()} jobId={jobId.toLowerCase()} /> : <section className="card"><p role="alert">Invalid job ID. Use the full saved job UUID.</p>{jobId && <p>{jobId}</p>}</section>}
   </>
 }

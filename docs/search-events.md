@@ -168,3 +168,25 @@ notices are `location_filter_local`, `filtered_job` and `manual_required`.
 The last reports a browser handoff, not scraping. Manual saves happen after the
 handoff completes and refresh persisted results through the API; they do not
 fabricate scraping events or reopen the terminal SSE stream.
+
+
+## Active Jobs additions
+
+`POST /api/v1/jobs/active` enqueues one `mode=active_jobs` task with an empty
+keyword and location. Its queued/started `source` is `multi`; saved jobs retain
+`linkedin` or `wellfound` labels.
+
+- `source_status`: `{source, status}` where status is `collecting`, `completed`,
+  `authorization_required`, `access_blocked`, `failed`, or `limit_reached`.
+  The latest state for each source also appears in results `source_statuses`.
+- `job_saved`: `{job_id, source, total_extracted}`. The referenced job, search
+  association, counter and event are committed atomically. Unlike legacy
+  `job_extracted`, this event guarantees persistence. Refresh the existing
+  results endpoint immediately; do not wait for a terminal event.
+- Results failures include an optional `source`. A source error does not erase
+  completed saves or prevent the next source from running. Task `completed`
+  means orchestration ended, not that either source was accessible or that any
+  listing is currently accepting applications.
+- Active Jobs clients use `events?follow=true` to keep receiving assisted saves
+  after discovery completes. The default event route still closes on terminal
+  status for legacy clients. Last-Event-ID replay and short transactions remain.

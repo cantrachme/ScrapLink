@@ -83,6 +83,22 @@ class SearchFailed(EventPayload):
     error: Literal["Search execution failed", "Browser execution failed"]
 
 
+class JobSaved(EventPayload):
+    job_id: str
+    source: Literal["linkedin", "wellfound"]
+    total_extracted: int = Field(ge=1)
+
+    @field_validator("job_id")
+    @classmethod
+    def uuid_id(cls, value):
+        return str(UUID(value))
+
+
+class SourceStatus(EventPayload):
+    source: Literal["linkedin", "wellfound"]
+    status: Literal["collecting", "completed", "authorization_required", "access_blocked", "failed", "limit_reached"]
+
+
 class BrowserAction(EventPayload):
     action: Literal[
         "opened_source", "focused_keyword", "typed_keyword", "location_filter_local",
@@ -92,6 +108,8 @@ class BrowserAction(EventPayload):
 
 
 EVENT_PAYLOADS: dict[str, type[EventPayload]] = {
+    "source_status": SourceStatus,
+    "job_saved": JobSaved,
     "browser_action": BrowserAction,
     "search_queued": SearchQueued,
     "search_started": SearchStarted,

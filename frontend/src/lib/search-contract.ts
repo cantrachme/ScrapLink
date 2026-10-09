@@ -21,7 +21,7 @@ export function isSearchTask(value: unknown): value is SearchTask {
     isDate(value.created_at) && isDate(value.updated_at) &&
     (value.error === null || typeof value.error === 'string') &&
     typeof r.source === 'string' && ['linkedin', 'wellfound', 'careerhub'].includes(r.source) &&
-    typeof r.keyword === 'string' && r.keyword.trim().length > 0 && r.keyword.length <= 200 &&
+    typeof r.keyword === 'string' && (r.mode === 'active_jobs' ? r.keyword === '' && r.location === '' : r.keyword.trim().length > 0) && r.keyword.length <= 200 &&
     typeof r.location === 'string' && r.location.length <= 200 &&
     typeof r.date_posted === 'string' && Object.hasOwn(DATE_LABELS, r.date_posted) &&
     isCount(r.max_results) && r.max_results >= 1 && r.max_results <= 500

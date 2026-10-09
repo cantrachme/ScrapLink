@@ -42,6 +42,7 @@ export interface JobListing {
 }
 
 export interface JobExtractionFailure {
+  source?: JobSource | null
   job_url: string
   error: string
 }

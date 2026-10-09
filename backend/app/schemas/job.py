@@ -6,6 +6,7 @@ from uuid import UUID
 
 from pydantic import (
     BaseModel,
+    ConfigDict,
     Field,
     field_validator,
     model_validator,
@@ -22,10 +23,18 @@ class DatePosted(str, Enum):
     PAST_MONTH = "30d"
 
 
+class ActiveJobsRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    max_results: int = Field(default=50, ge=1, le=500)
+    watch_mode: bool = True
+    watch_delay_seconds: float = Field(default=2.0, ge=1.5, le=3.0)
+
+
 class JobSearchRequest(BaseModel):
+    mode: Literal["search", "active_jobs"] = "search"
     source: Literal["linkedin", "wellfound", "careerhub"] = "linkedin"
     keyword: str = Field(
-        min_length=1,
+        default="",
         max_length=200,
         description="Job title or search keywords",
     )
@@ -50,12 +59,14 @@ class JobSearchRequest(BaseModel):
     def strip_whitespace(cls, value: str) -> str:
         return value.strip()
 
-    @field_validator("keyword")
-    @classmethod
-    def validate_keyword(cls, value: str) -> str:
-        if not value:
+    @model_validator(mode="after")
+    def validate_discovery(self):
+        if self.mode == "search" and not self.keyword:
             raise ValueError("Keyword cannot be empty")
-        return value
+        if self.mode == "active_jobs" and (self.keyword or self.location or self.date_posted != "24h"
+                                           or self.source not in ("linkedin", "wellfound")):
+            raise ValueError("Active Jobs requires unrestricted LinkedIn/Wellfound discovery in the last 24 hours")
+        return self
 
 
 class JobSearchResponse(BaseModel):
@@ -208,11 +219,13 @@ class PersistedJobResponse(JobListing):
 
 
 class JobExtractionFailure(BaseModel):
+    source: JobSource | None = None
     job_url: str
     error: str
 
 
 class JobSearchResultsResponse(BaseModel):
+    source_statuses: dict[str, str] = Field(default_factory=dict)
     search_id: str
     status: str
     source: JobSource | None = None
@@ -233,6 +246,12 @@ class JobSearchResultsResponse(BaseModel):
 
 
 class AssistedJobInput(BaseModel):
+    source: Literal["linkedin", "wellfound"] | None = None
+    company: str = Field(default="", max_length=500)
+    compensation: Compensation | None = None
+    posted_date: date | None = None
+    posted_at: datetime | None = None
+    posted_text: str | None = Field(default=None, max_length=255)
     title: str = Field(min_length=1, max_length=500)
     job_url: str = Field(max_length=2048)
     location: str | None = Field(default=None, max_length=500)

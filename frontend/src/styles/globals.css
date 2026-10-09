@@ -1019,3 +1019,9 @@ main:focus {
   .pagination-actions { width: 100%; justify-content: space-between; gap: 8px; }
   .search-details-stack > .card, .job-details-stack > .card { padding: 18px; min-width: 0; }
 }
+
+.sidebar-nav nav .active-jobs-button {
+  width: 100%; justify-content: flex-start; background: transparent;
+  color: inherit; border: 0; font: inherit; text-align: left;
+}
+.welcome-copy > .active-jobs-button { margin: 0 0.75rem 0.75rem 0; }
