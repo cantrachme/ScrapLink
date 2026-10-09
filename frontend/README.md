@@ -1,8 +1,8 @@
-# ScrapLink frontend — Step 49
+# ScrapLink frontend — Step 50
 
 React, TypeScript, Vite, and React Router workspace for creating persisted job
-searches and following real FastAPI progress. No mock jobs, counts, or worker
-activity are displayed. Saved search results and complete job details are connected
+searches and following real FastAPI progress. Counts and worker activity come from the backend. Explicit fixture-worker
+mode supplies clearly labeled demonstration jobs through the same persisted flow. Saved search results and complete job details are connected
 to PostgreSQL through the API. A search-history index is not yet available.
 
 ## Local development
@@ -175,21 +175,28 @@ existing relative URLs, 15-second timeout, cancellation, and error handling.
 Backend counters can differ from loaded distinct rows (for example, duplicate
 extractions); the dashboard reports both without fabricating additional jobs.
 
-## Worker startup limitation and Step 50 integration
+## Worker startup and fixture demonstration
 
-The API creates a PostgreSQL pending task and queued event. It does not start
-Chrome or schedule an in-process collector. `JobQueueWorker` implements
-`run_once`/`run_forever`, and `BrowserCollector` implements progress callbacks,
-but the repository has no executable worker startup entry point wiring them
-together. Therefore a reachable API alone can leave searches correctly queued.
+Run the worker in its own terminal from the repository root:
 
-Step 50 needs an explicit executable startup path that constructs
-`BrowserCollector` with `build_source_search_url`, injects it into
-`JobQueueWorker`, and runs the worker with the configured backend environment,
-PostgreSQL, and installed browser runtime. It also needs startup/shutdown and
-operational documentation. This step does not add that entry point, bypass access
-challenges, launch a worker, or make live LinkedIn/Wellfound requests. Existing
-worker crashes can leave tasks running; recovery/leases remain backend work.
+```sh
+source .venv/bin/activate
+python -m backend.app.workers.run_worker --mode fixture
+```
+
+It starts a local fixture HTTP server and uses a real Chrome session. Open
+`http://localhost:5173/search`, choose either source, enter Python Developer and
+United States, choose Any time, and submit with a maximum of 20. Expect three
+saved `[DEMO]` jobs and one intentional detail failure. Follow progress, open a
+job, and refresh to retrieve the same PostgreSQL UUID and complete description.
+Fixture titles, company and descriptions identify synthetic data. Canonical
+source URLs in these jobs are fixture parsing identifiers, not genuine listings.
+
+The API creates pending tasks only. The worker claims them, commits progress and
+final results, and handles shutdown and stale-task recovery. Existing SSE logic
+already consumes its event contract without changes. Live collection requires
+separate explicit source authorization and has not been validated by fixture tests.
+See the [complete local setup and recovery guide](../README.md).
 
 ## Validation
 

@@ -65,7 +65,7 @@ function SearchProgress({ task }: { task: SearchTask }) {
           <span className={`status task-${progress.status}`} role="status">{statusLabels[progress.status]}</span>
         </div>
         <p className={`connection-note connection-${progress.connection}`} role="status">{connectionLabels[progress.connection]}</p>
-        {progress.status === 'pending' && <p className="notice">Waiting for a worker. Your search is safely queued; an active worker must claim it before collection begins. Worker startup integration is planned for Step 50.</p>}
+        {progress.status === 'pending' && <p className="notice">Waiting for a worker. Your search is safely queued; an active worker must claim it before collection begins.</p>}
         {progress.status === 'running' && <p className="notice">{progress.events.some((e) => ['page_discovered', 'job_extracted', 'job_failed'].includes(e.event)) ? 'The worker is collecting jobs.' : 'The search is running. Waiting for collection progress.'}</p>}
         {completed && <p className="notice">{hasFinalCounts ? extracted === 0 ? 'Search completed with zero qualifying jobs.' : `Search completed — ${extracted} qualifying jobs extracted.` : resultsError ? 'Search completed. Persisted result counts are currently unavailable.' : 'Search completed. Loading persisted result counts…'} <a className="text-link" href="#search-results">View persisted results summary</a></p>}
         {progress.status === 'failed' && <p className="error-banner" role="alert">Search failed — {latest.error || progress.error || 'The backend did not provide an error message.'}</p>}

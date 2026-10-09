@@ -6,12 +6,9 @@ from urllib.parse import urlsplit
 from scrapling.parser import Selector
 
 from backend.app.schemas.job import (
-    Compensation,
-    EmploymentType,
     JobListing,
     JobSearchRequest,
     JobSource,
-    WorkplaceType,
 )
 from backend.app.sources.base import (
     BaseJobSourceAdapter,
@@ -22,6 +19,7 @@ from backend.app.services.job_deduplication import (
     normalize_job_url,
 )
 from backend.app.services.job_filters import parse_posting_date
+from backend.app.sources.structured_job import compensation, employment_type, workplace_type
 
 
 class WellfoundJobAdapter(BaseJobSourceAdapter):
@@ -165,79 +163,6 @@ class WellfoundJobAdapter(BaseJobSourceAdapter):
             str(p) for p in parts if p
         ) or None
 
-    @staticmethod
-    def _get_employment_type(value):
-        if not isinstance(value, str):
-            return None
-
-        normalized = value.strip().lower()
-        normalized = normalized.replace("-", "_")
-        normalized = normalized.replace(" ", "_")
-
-        mapping = {
-            "full_time": EmploymentType.FULL_TIME,
-            "fulltime": EmploymentType.FULL_TIME,
-            "part_time": EmploymentType.PART_TIME,
-            "contract": EmploymentType.CONTRACT,
-            "internship": EmploymentType.INTERNSHIP,
-            "temporary": EmploymentType.TEMPORARY,
-        }
-
-        return mapping.get(normalized)
-
-    @staticmethod
-    def _get_workplace_type(value):
-        if not isinstance(value, str):
-            return None
-
-        normalized = value.strip().lower()
-
-        mapping = {
-            "telecommute": WorkplaceType.REMOTE,
-            "remote": WorkplaceType.REMOTE,
-            "remote only": WorkplaceType.REMOTE,
-            "in office": WorkplaceType.ONSITE,
-            "onsite": WorkplaceType.ONSITE,
-            "hybrid": WorkplaceType.HYBRID,
-        }
-
-        return mapping.get(normalized)
-
-    @staticmethod
-    def _get_compensation(data):
-        salary = data.get("baseSalary")
-
-        if not isinstance(salary, dict):
-            return None
-
-        value = salary.get("value", {})
-
-        if isinstance(value, (int, float)):
-            value = {
-                "minValue": value,
-                "maxValue": value,
-            }
-
-        if not isinstance(value, dict):
-            return None
-
-        period_map = {
-            "HOUR": "hour",
-            "MONTH": "month",
-            "YEAR": "year",
-        }
-
-        period = period_map.get(
-            str(value.get("unitText", "")).upper()
-        )
-
-        return Compensation(
-            currency=salary.get("currency"),
-            min_amount=value.get("minValue"),
-            max_amount=value.get("maxValue"),
-            period=period,
-        )
-
     def extract_job_details(
         self,
         page: Selector,
@@ -328,7 +253,7 @@ class WellfoundJobAdapter(BaseJobSourceAdapter):
                 skills.append(value)
                 seen_skills.add(value.lower())
 
-        employment_type = self._get_employment_type(
+        parsed_employment = employment_type(
             structured.get("employmentType")
             or self._first_text(
                 page,
@@ -336,7 +261,7 @@ class WellfoundJobAdapter(BaseJobSourceAdapter):
             )
         )
 
-        workplace_type = self._get_workplace_type(
+        parsed_workplace = workplace_type(
             structured.get("jobLocationType")
             or self._first_text(
                 page,
@@ -357,10 +282,10 @@ class WellfoundJobAdapter(BaseJobSourceAdapter):
             company_url=organization.get("sameAs"),
             description=description,
             location=location,
-            employment_type=employment_type,
-            workplace_type=workplace_type,
+            employment_type=parsed_employment,
+            workplace_type=parsed_workplace,
             skills=skills,
-            compensation=self._get_compensation(
+            compensation=compensation(
                 structured
             ),
             posted_date=posted_date,

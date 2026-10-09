@@ -1,4 +1,4 @@
-# Durable search progress (Step 46)
+# Durable search progress (Steps 46–50)
 
 `GET /api/v1/jobs/search/{search_id}/events` streams the committed PostgreSQL
 event log as UTF-8 `text/event-stream`. The API and worker can run in separate
@@ -56,7 +56,9 @@ and limits outside 1–1000. ORM objects never cross into the SSE coroutine.
 
 The worker commits the claim before calling the collector. Each callback writes
 and commits one progress event in a short, separate transaction. No database
-session or transaction spans browser actions. Callback errors escape the
+transaction or row lock spans browser actions. Step 50 holds one dedicated
+AUTOCOMMIT connection with a session advisory lock as execution ownership; this
+connection remains outside a PostgreSQL transaction during browser work. Callback errors escape the
 collector, are logged by the worker, and fail the search; if failed-state/event
 persistence also fails, the error propagates to the caller.
 
@@ -119,8 +121,11 @@ heartbeats, polling, UTF-8 formatting, disconnection, and reconnection.
 
 ## Known limitations
 
-- A worker process crash, or database failure while recording failure, can leave
-  a search `running`. Leases, crash recovery, and automatic retry are not added.
+- Step 50 recovers abandoned `running` tasks after five minutes without a task
+  update and only when no execution advisory lock remains. Recovery records
+  failed status and one terminal event atomically. Progress stays replayable;
+  jobs not committed before a crash are unavailable. No automatic retry occurs.
+  See the [worker recovery policy](../README.md#shutdown-and-stale-task-recovery).
 - Polling introduces roughly one second of delivery latency and database reads
   per connected client. This local MVP has no LISTEN/NOTIFY or fan-out broker.
 - Events are retained until the parent search is deleted; no retention policy
@@ -130,3 +135,25 @@ heartbeats, polling, UTF-8 formatting, disconnection, and reconnection.
   exist and closes based on its persisted terminal status.
 - Intermediate extraction events are durable progress, not a guarantee that
   the final results transaction will succeed. Only `search_completed` confirms it.
+
+## Step 50 worker integration
+
+Run `python -m backend.app.workers.run_worker --mode fixture` independently of
+FastAPI. This wires BrowserCollector to the existing source router and pipeline.
+The local demonstration uses real Chrome with loopback-only fixture navigation.
+Use `--mode live` only with explicitly configured authorized sources; fixture
+results do not validate real platform behavior.
+
+Progress publication checks the locked task is still running, fencing late
+collectors after recovery. Shutdown via SIGINT/SIGTERM cooperatively ends
+collection and publishes `search_failed` with an operator reason on the task.
+A crash loses the execution lock and is recovered after the configured grace.
+All-detail failure persists extraction failures and `search_failed` together.
+Successful/partially successful final results still use `search_completed`; a
+legitimate empty or fully date-filtered result without extraction errors completes.
+Both terminal paths retain the original event schemas and transaction atomicity.
+
+The React hook already handles cumulative counters, replay and terminal closure,
+so Step 50 does not change its logic. New end-to-end tests assert the actual worker
+event order, per-search sequences, cursor replay and absence of duplicate terminal
+events, including concurrent recovery after an abrupt subprocess exit.

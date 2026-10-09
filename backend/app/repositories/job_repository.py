@@ -1,8 +1,8 @@
 
 from uuid import UUID
 
-from sqlalchemy import case, func, null
-from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy import case, cast, func, null
+from sqlalchemy.dialects.postgresql import JSONB, insert
 from sqlalchemy.orm import Session
 
 from backend.app.models.job import Job
@@ -91,7 +91,37 @@ class JobRepository:
         # Preserve existing compensation if the new
         # extraction does not provide compensation.
         if listing.compensation is not None:
-            updates["compensation"] = stmt.excluded.compensation
+            # Partial salary data must not erase previously known bounds,
+            # currency or period. JSON nulls are missing data, not deletions.
+            old_salary = case(
+                (func.jsonb_typeof(Job.compensation) == "object", Job.compensation),
+                else_=cast({}, JSONB),
+            )
+            new_salary = func.jsonb_strip_nulls(stmt.excluded.compensation)
+            merged_salary = old_salary.op("||")(new_salary)
+            incoming_salary = listing.compensation
+            # A new bound can supersede a contradictory old bound. Never save
+            # an invalid range that would make the job details API unreadable.
+            if incoming_salary.min_amount is not None and incoming_salary.max_amount is None:
+                merged_salary = case(
+                    (Job.compensation["max_amount"].as_float() < incoming_salary.min_amount,
+                     merged_salary.op("-")("max_amount")), else_=merged_salary,
+                )
+            if incoming_salary.max_amount is not None and incoming_salary.min_amount is None:
+                merged_salary = case(
+                    (Job.compensation["min_amount"].as_float() > incoming_salary.max_amount,
+                     merged_salary.op("-")("min_amount")), else_=merged_salary,
+                )
+            for unit in ("currency", "period"):
+                value = getattr(incoming_salary, unit)
+                if value is not None:
+                    merged_salary = case(
+                        (Job.compensation[unit].as_string() != value,
+                         old_salary.op("-")("min_amount").op("-")("max_amount")
+                         .op("-")("raw_text").op("||")(new_salary)),
+                        else_=merged_salary,
+                    )
+            updates["compensation"] = merged_salary
 
         # Do not overwrite existing lists with empty lists.
         for field in [

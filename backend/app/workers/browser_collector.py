@@ -45,6 +45,10 @@ class BrowserCollector:
         real_chrome: bool = True,
         wait_ms: int = 0,
         max_pages: int = 10,
+        navigation_url_resolver: Callable[[str], str] | None = None,
+        check_cancelled: Callable[[], None] | None = None,
+        timeout_ms: int = 30000,
+        strict_listings: bool = False,
     ):
         if type(max_pages) is not int or max_pages < 1:
             raise ValueError("max_pages must be a positive integer")
@@ -55,6 +59,10 @@ class BrowserCollector:
         self.real_chrome = real_chrome
         self.wait_ms = wait_ms
         self.max_pages = max_pages
+        self.navigation_url_resolver = navigation_url_resolver or (lambda url: url)
+        self.check_cancelled = check_cancelled or (lambda: None)
+        self.timeout_ms = timeout_ms
+        self.strict_listings = strict_listings
         self.pipeline = JobExtractionPipeline()
 
     @staticmethod
@@ -73,8 +81,10 @@ class BrowserCollector:
         )
 
     def _fetch_html(self, session: Any, url: str) -> str:
+        self.check_cancelled()
         response = session.fetch(
-            url, google_search=False, timeout=30000, wait=self.wait_ms,
+            self.navigation_url_resolver(url), google_search=False,
+            timeout=self.timeout_ms, wait=self.wait_ms,
         )
         if response.status >= 300:
             raise RuntimeError(f"Browser received HTTP {response.status} for {url}")
@@ -92,6 +102,7 @@ class BrowserCollector:
                 "just a moment...", "access denied", "sign in - wellfound",
             }
             or page.css('form[action*="/checkpoint/"]')
+            or page.css('input[type="password"], iframe[src*="captcha"], #challenge-form')
         ):
             raise RuntimeError(f"Authentication or access challenge encountered for {url}")
         return html
@@ -142,8 +153,16 @@ class BrowserCollector:
                 else:
                     page_url = paginate_search_url(source, listing_url, page_number)
                 listing_html = self._fetch_html(session, page_url)
+                discovered = self.pipeline.discover_urls(source, search, listing_html)
+                if self.strict_listings and not discovered:
+                    markers = {
+                        JobSource.LINKEDIN: ".jobs-search__results-list, .jobs-search-no-results-banner",
+                        JobSource.WELLFOUND: '[data-testid="job-search-results"], [data-testid="no-results"]',
+                    }
+                    if not Selector(content=listing_html).css(markers[source]):
+                        raise RuntimeError("Unrecognized or inaccessible source listing page")
                 new_urls = []
-                for job_url in self.pipeline.discover_urls(source, search, listing_html):
+                for job_url in discovered:
                     key = job_identity(source, job_url)
                     if key not in seen:
                         seen.add(key)
@@ -159,6 +178,7 @@ class BrowserCollector:
                     break
 
                 for job_url in new_urls:
+                    self.check_cancelled()
                     previous_extracted = result.total_extracted
                     previous_failed = result.total_failed
                     if not self._is_allowed_job_url(source, job_url):

@@ -23,6 +23,9 @@ class Settings(BaseSettings):
 
     BROWSER_HEADLESS: bool = False
     BROWSER_TIMEOUT_MS: int = 30000
+    # Comma-separated sources for which the operator has permission to collect.
+    # Empty disables live worker startup. This does not bypass source access gates.
+    AUTHORIZED_LIVE_SOURCES: str = ""
 
     FRONTEND_URL: str = "http://localhost:5173"
 

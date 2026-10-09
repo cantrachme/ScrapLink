@@ -1,9 +1,14 @@
 
 from uuid import uuid4
 
+import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import delete
 
+from backend.app.database import SessionLocal
 from backend.app.main import app
+from backend.app.models.search import SearchTaskRecord
+from backend.app.repositories.search_repository import SearchRepository
 from backend.app.schemas.job import JobSearchRequest
 from backend.app.services.task_manager import (
     SearchTaskManager,
@@ -11,6 +16,24 @@ from backend.app.services.task_manager import (
 )
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def clean_created_searches(monkeypatch):
+    """These API tests commit real queue entries; never leave them for a worker."""
+    ids = []
+    original_create = SearchRepository.create
+
+    def track(db, request, source=None):
+        task = original_create(db, request, source)
+        ids.append(task.search_id)
+        return task
+
+    monkeypatch.setattr(SearchRepository, "create", staticmethod(track))
+    yield
+    if ids:
+        with SessionLocal.begin() as db:
+            db.execute(delete(SearchTaskRecord).where(SearchTaskRecord.search_id.in_(ids)))
 
 
 def test_create_search_task():

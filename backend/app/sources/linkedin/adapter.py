@@ -19,6 +19,7 @@ from backend.app.services.job_deduplication import (
     normalize_job_url,
 )
 from backend.app.services.job_filters import parse_posting_date
+from backend.app.sources.structured_job import compensation, employment_type, workplace_type
 
 
 class LinkedInJobAdapter(BaseJobSourceAdapter):
@@ -247,6 +248,9 @@ class LinkedInJobAdapter(BaseJobSourceAdapter):
             company_url=organization.get("sameAs"),
             location=location,
             description=description,
+            compensation=compensation(data),
+            employment_type=employment_type(data.get("employmentType")),
+            workplace_type=workplace_type(data.get("jobLocationType")),
             posted_date=posted_date,
             posted_at=posted_at,
         )

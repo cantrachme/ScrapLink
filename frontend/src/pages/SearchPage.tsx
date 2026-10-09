@@ -109,7 +109,7 @@ export function SearchPage() {
               <span id="max-error" className="field-error">{errors.maxResults}</span>
             </div>
           </fieldset>
-          <p className="search-note">Searches enter a queue and require an active worker. Submitting this form does not launch Chrome. Worker startup integration is planned for Step 50.</p>
+          <p className="search-note">Searches enter a queue and require an active worker. Submitting this form does not launch Chrome. The separate worker opens Chrome after claiming your search. Local fixture demonstrations use Python Developer, United States, and Any time; all demonstration jobs are labeled [DEMO]. Live collection requires separately configured permission.</p>
           {error && <p className="error-banner" role="alert">{error}</p>}
           <button type="submit" className="button button-primary" disabled={pending}>
             {pending ? <><span className="loading-spinner" aria-hidden="true" />Creating search…</> : <>Start Search<Icon name="arrow" /></>}
