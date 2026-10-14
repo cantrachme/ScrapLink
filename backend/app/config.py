@@ -1,4 +1,6 @@
 
+import re
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -21,11 +23,22 @@ class Settings(BaseSettings):
     POSTGRES_PASSWORD: str = ""
 
 
-    # Explicit operator record of platform permission; empty means assisted only.
-    ACTIVE_JOBS_AUTHORIZATIONS: dict[str, str] = {}
-    BROWSER_HEADLESS: bool = False
-    BROWSER_TIMEOUT_MS: int = 30000
+    ASHBY_BOARDS: list[str] = ["ashby"]
+    GREENHOUSE_BOARDS: list[str] = ["anthropic"]
+    LEVER_BOARDS: list[str] = ["palantir"]
+    USAJOBS_EMAIL: str = ""
+    USAJOBS_API_KEY: str = ""
+    REMOTIVE_CACHE_PATH: str = ".cache/remotive.json"
+    BROWSER_HEADLESS: bool = True
+    BROWSER_TIMEOUT_MS: int = 20000
     FRONTEND_URL: str = "http://localhost:5173"
+
+    @field_validator("ASHBY_BOARDS", "GREENHOUSE_BOARDS", "LEVER_BOARDS")
+    @classmethod
+    def board_tokens(cls, values):
+        if len(values) > 3 or any(not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", v) for v in values):
+            raise ValueError("Configure at most three valid public employer board tokens per platform")
+        return list(dict.fromkeys(values))
 
     model_config = SettingsConfigDict(
         env_file=".env",

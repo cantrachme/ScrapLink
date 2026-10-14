@@ -1,6 +1,5 @@
 import logging
 import math
-from collections.abc import Callable
 from contextlib import ExitStack
 from datetime import timedelta
 from threading import Event
@@ -14,12 +13,9 @@ from backend.app.models.search import SearchTaskRecord
 from backend.app.repositories.search_event_repository import SearchEventRepository
 from backend.app.repositories.search_repository import SearchRepository, utc_now
 from backend.app.schemas.search_event import SEARCH_FAILURE_MESSAGE
-from backend.app.schemas.job import JobSearchRequest, JobSource
-from backend.app.services.job_pipeline import PipelineResult
 from backend.app.workers.execution_lock import execution_lock, lock_key
 
 logger = logging.getLogger(__name__)
-Collector = Callable[[JobSource, JobSearchRequest], PipelineResult]
 STALE_TIMEOUT_SECONDS = 300.0
 
 
@@ -30,7 +26,7 @@ class WorkerShutdown(Exception):
 class JobQueueWorker:
     """PostgreSQL queue; injected collectors keep tests browser-independent."""
 
-    def __init__(self, collector: Collector, *, stop_event: Event | None = None):
+    def __init__(self, collector, *, stop_event: Event | None = None):
         self.collector = collector
         self.repository = SearchRepository()
         self.events = SearchEventRepository()
@@ -67,6 +63,7 @@ class JobQueueWorker:
         with SessionLocal.begin() as db:
             statement = select(SearchTaskRecord).where(
                 SearchTaskRecord.status == "running", SearchTaskRecord.updated_at < cutoff,
+                SearchTaskRecord.request_payload["mode"].as_string() == "discovery",
             ).order_by(SearchTaskRecord.updated_at).with_for_update(skip_locked=True).limit(100)
             if search_id is not None:
                 statement = statement.where(SearchTaskRecord.search_id == search_id)
@@ -87,62 +84,20 @@ class JobQueueWorker:
             return False
         with ExitStack() as ownership:
             with SessionLocal.begin() as db:
-                task = self.repository.claim_next_pending(db, search_id=search_id)
+                task = self.repository.claim_next_pending(db, search_id=search_id, mode="discovery")
                 if task is None:
                     return False
                 claimed_id = task.search_id
                 # Acquire ownership before the running status becomes visible.
                 ownership.enter_context(execution_lock(claimed_id))
-                source_value = task.source
                 request_payload = dict(task.request_payload)
                 self.events.publish(db, claimed_id, "search_started", {
-                    "search_id": str(claimed_id), "status": "running",
-                    "source": "multi" if request_payload.get("mode") == "active_jobs" else source_value or request_payload["source"],
+                    "search_id": str(claimed_id), "status": "running", "source": "multi",
                 })
-
             try:
                 self.check_shutdown()
-                request = JobSearchRequest.model_validate(request_payload)
-                if request.mode == "active_jobs":
-                    from backend.app.workers.active_jobs import run_active_jobs
-                    run_active_jobs(self, claimed_id, request)
-                    return True
-                source = JobSource(source_value or request.source)
-                logger.info("Processing search %s (%s)", claimed_id, source.value)
-
-                def publish_progress(event_type: str, payload: dict) -> None:
-                    self.check_shutdown()
-                    if event_type not in {"browser_action", "page_discovered", "job_extracted", "job_failed"}:
-                        raise ValueError("Collector emitted a non-progress event")
-                    with SessionLocal.begin() as db:
-                        task = self.repository._get_locked(db, claimed_id)
-                        if task.status != "running":
-                            raise RuntimeError("Search execution ownership was lost")
-                        task.updated_at = utc_now()
-                        self.events.publish(db, claimed_id, event_type, payload)
-
-                collect = getattr(self.collector, "collect_with_progress", None)
-                result = collect(source, request, publish_progress) if callable(collect) else self.collector(source, request)
-                self.check_shutdown()
-                if result.source != source:
-                    raise ValueError("Collector returned an unexpected source")
-
-                with SessionLocal.begin() as db:
-                    task = self.repository.complete(db, claimed_id, result)
-                    if result.total_failed and not result.total_extracted:
-                        # Persist failed detail records even when every attempt failed.
-                        task.status = "failed"
-                        task.error = "No qualifying jobs could be saved; job detail extraction failed"
-                        self.events.publish(db, claimed_id, "search_failed", {
-                            "search_id": str(claimed_id), "status": "failed", "error": SEARCH_FAILURE_MESSAGE,
-                        })
-                    else:
-                        self.events.publish(db, claimed_id, "search_completed", {
-                            "search_id": str(claimed_id), "status": "completed",
-                            "total_discovered": result.total_discovered,
-                            "total_extracted": result.total_extracted,
-                            "total_failed": result.total_failed,
-                        })
+                from backend.app.workers.discovery import run_discovery
+                run_discovery(self, claimed_id, request_payload)
                 logger.info("Finished search %s (%s)", claimed_id, task.status)
             except (Exception, KeyboardInterrupt) as exc:
                 if isinstance(exc, (WorkerShutdown, KeyboardInterrupt)):

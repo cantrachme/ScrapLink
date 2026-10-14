@@ -15,6 +15,8 @@ def employment_type(value):
         "full_time": EmploymentType.FULL_TIME,
         "fulltime": EmploymentType.FULL_TIME,
         "part_time": EmploymentType.PART_TIME,
+        "parttime": EmploymentType.PART_TIME,
+        "intern": EmploymentType.INTERNSHIP,
         "contract": EmploymentType.CONTRACT,
         "internship": EmploymentType.INTERNSHIP,
         "temporary": EmploymentType.TEMPORARY,
@@ -35,6 +37,7 @@ def workplace_type(value):
         "remote only": WorkplaceType.REMOTE,
         "in office": WorkplaceType.ONSITE,
         "onsite": WorkplaceType.ONSITE,
+        "on-site": WorkplaceType.ONSITE,
         "hybrid": WorkplaceType.HYBRID,
     }
 

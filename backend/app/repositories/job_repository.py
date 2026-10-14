@@ -1,14 +1,13 @@
 
-from hashlib import sha256
 from uuid import UUID
 
-from sqlalchemy import case, cast, func, null, or_, select, text
+from sqlalchemy import case, cast, func, null
 from sqlalchemy.dialects.postgresql import JSONB, insert
 from sqlalchemy.orm import Session
 
 from backend.app.models.job import Job
 from backend.app.schemas.job import JobListing
-from backend.app.services.job_deduplication import extract_job_id, normalize_job_url
+from backend.app.services.job_deduplication import normalize_job_url
 
 
 class JobRepository:
@@ -162,33 +161,6 @@ class JobRepository:
             statement,
             execution_options={"populate_existing": True},
         ).one()
-
-    @staticmethod
-    def upsert_active(db: Session, listing: JobListing) -> Job:
-        """Source ID deduplication retains the first navigable original URL.
-
-        Serialize aliases of one ID across workers/manual saves without adding a
-        migration or rewriting existing historical records.
-        """
-        job_id = extract_job_id(listing.source, listing.job_url)
-        if job_id is None:
-            raise ValueError("Expected an original source-owned job URL")
-        key = int.from_bytes(sha256(f"{listing.source.value}:{job_id}".encode()).digest()[:8],
-                             "big", signed=True)
-        db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": key})
-        pattern = (rf"/jobs/view/([^/?]+-)?{job_id}/?([?#].*)?$" if listing.source.value == "linkedin"
-                   else rf"/jobs/{job_id}(-[^/?]+)?/?([?#].*)?$")
-        existing = db.scalar(select(Job).where(Job.source == listing.source.value,
-            or_(Job.source_job_id == job_id, Job.job_url.regexp_match(pattern)))
-            .order_by(Job.first_seen_at, Job.id).limit(1))
-        listing = listing.model_copy(update={"source_job_id": job_id,
-            "job_url": existing.job_url if existing else listing.job_url})
-        saved = JobRepository.upsert(db, listing)
-        # A fresh inspection without availability evidence must not inherit a
-        # historical active badge while refreshing its verification timestamp.
-        saved.status = listing.status.value
-        db.flush()
-        return saved
 
     @staticmethod
     def get_by_id(

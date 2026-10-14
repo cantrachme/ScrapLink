@@ -94,38 +94,6 @@ def test_invalid_job_uuid(stored_api, monkeypatch):
     assert client.get("/api/v1/jobs/not-a-uuid").status_code == 422
 
 
-def test_search_results_ids_match_single_job_and_other_searches(stored_api):
-    db, client = stored_api
-    job = listing(description="Full stored description.\n\nLast paragraph.", skills=["Python"])
-    first = complete_search(db, job)
-    second = complete_search(db, job)
-    first_results = client.get(f"/api/v1/jobs/search/{first}/results").json()
-    second_results = client.get(f"/api/v1/jobs/search/{second}/results").json()
-    a, b = first_results["jobs"][0], second_results["jobs"][0]
-    assert a["id"] == b["id"]
-    assert JobRepository.get_by_id(db, UUID(a["id"])) is not None
-    assert client.get(f'/api/v1/jobs/{a["id"]}').json() == a
-    assert a["description"] == job.description
-    assert first_results["search_id"] == str(first)
-    assert first_results["source"] == "linkedin"
-    assert first_results["discovered_urls"] == [job.job_url]
-    assert first_results["failures"] == []
-    assert first_results["total_discovered"] == first_results["total_extracted"] == 1
-    assert first_results["total_failed"] == 0
-
-
-def test_search_routes_remain_compatible(stored_api):
-    _, client = stored_api
-    response = client.post("/api/v1/jobs/search", json={"keyword": "Python"})
-    assert response.status_code == 202
-    search_id = response.json()["search_id"]
-    assert client.get(f"/api/v1/jobs/search/{search_id}").json()["status"] == "pending"
-    results = client.get(f"/api/v1/jobs/search/{search_id}/results")
-    assert results.status_code == 200
-    assert results.json()["jobs"] == []
-    assert results.json()["status"] == "pending"
-
-
 def test_extraction_input_still_requires_no_database_identity():
     job = listing()
     assert "id" not in job.model_dump()

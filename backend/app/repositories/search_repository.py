@@ -35,6 +35,7 @@ class SearchRepository:
     def claim_next_pending(
         db: Session,
         search_id: UUID | None = None,
+        mode: str | None = None,
     ) -> SearchTaskRecord | None:
         """
         Atomically claim one pending search.
@@ -54,6 +55,8 @@ class SearchRepository:
             .limit(1)
         )
 
+        if mode is not None:
+            statement = statement.where(SearchTaskRecord.request_payload["mode"].as_string() == mode)
         if search_id is not None:
             statement = statement.where(
                 SearchTaskRecord.search_id == search_id
@@ -227,8 +230,7 @@ class SearchRepository:
             )
             .where(SearchTaskJob.search_id == task.search_id)
             .order_by(
-                *([func.coalesce(Job.posted_at, Job.posted_date).desc().nulls_last()]
-                  if task.request_payload.get("mode") == "active_jobs" else []),
+                func.coalesce(Job.posted_at, Job.posted_date).desc().nulls_last(),
                 SearchTaskJob.discovered_at, SearchTaskJob.job_id,
             )
         ).all()

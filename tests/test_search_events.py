@@ -164,38 +164,3 @@ def test_search_id_must_match_parent(searches):
 def test_invalid_repository_cursor_or_limit(searches, cursor, limit):
     with SessionLocal() as db, pytest.raises(ValueError):
         Events.get_after(db, searches(), cursor, limit)
-
-
-def test_api_queue_event_commits_with_search():
-    response = TestClient(app).post("/api/v1/jobs/search", json={"keyword": "Python"})
-    assert response.status_code == 202
-    search_id = response.json()["search_id"]
-    try:
-        with SessionLocal() as db:
-            events = Events.get_after(db, search_id, 0)
-            assert [e.event_type for e in events] == ["search_queued"]
-            assert events[0].payload == {"search_id": search_id, "status": "pending", "source": "linkedin"}
-            assert Searches.get(db, search_id).status == "pending"
-    finally:
-        with SessionLocal.begin() as db:
-            db.execute(delete(SearchTaskRecord).where(SearchTaskRecord.search_id == search_id))
-
-
-def test_api_queued_event_failure_rolls_back_search(monkeypatch):
-    ids = []
-    original = Events.publish
-
-    def fail_after_insert(db, search_id, event_type, payload):
-        ids.append(search_id)
-        original(db, search_id, event_type, payload)
-        raise RuntimeError("Simulated event persistence error")
-
-    monkeypatch.setattr(Events, "publish", fail_after_insert)
-    response = TestClient(app, raise_server_exceptions=False).post(
-        "/api/v1/jobs/search", json={"keyword": "Python"},
-    )
-    assert response.status_code == 500
-    assert len(ids) == 1
-    with SessionLocal() as db:
-        assert Searches.get(db, ids[0]) is None
-        assert db.scalar(select(SearchEvent).where(SearchEvent.search_id == ids[0])) is None

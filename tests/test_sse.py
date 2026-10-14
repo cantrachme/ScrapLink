@@ -17,7 +17,6 @@ from backend.app.repositories.search_repository import SearchRepository as Searc
 from backend.app.schemas.job import JobSearchRequest, JobSource
 from backend.app.services import search_event_stream as streaming
 from backend.app.services.job_pipeline import PipelineResult
-from backend.app.workers.queue_worker import JobQueueWorker
 
 
 @pytest.fixture(autouse=True)
@@ -40,6 +39,7 @@ def search_factory():
     def create(*, completed=True, pages=0):
         with SessionLocal.begin() as db:
             task = Searches.create(db, JobSearchRequest(keyword="Python"), JobSource.LINKEDIN)
+            task.request_payload = {"mode": "discovery", "window_end": "2026-10-14T10:00:00+00:00"}
             search_id = task.search_id
             ids.append(search_id)
             Events.publish(db, search_id, "search_queued", {
@@ -141,10 +141,7 @@ def test_terminal_replay_drains_multiple_or_exact_batches(search_factory, pages)
 def test_failed_search_replays_and_closes(search_factory):
     search_id = search_factory(completed=False)
 
-    def fail(source, request):
-        raise RuntimeError("private browser information")
-
-    JobQueueWorker(fail).run_once(search_id)
+    finish(search_id, failed=True)
     response = TestClient(app).get(url(search_id))
     assert [e["event"] for e in frames(response)] == ["search_queued", "search_started", "search_failed"]
     assert "private browser information" not in response.text
@@ -200,7 +197,7 @@ def test_reads_run_off_event_loop_and_disconnected_events_remain_replayable(sear
     first = asyncio.run(asyncio.wait_for(first_connection(), timeout=2))
     assert first.startswith("id: 1\nevent: search_queued\n")
     assert read_threads and all(thread != get_ident() for thread in read_threads)
-    JobQueueWorker(lambda source, request: PipelineResult(source=source)).run_once(search_id)
+    finish(search_id)
     response = TestClient(app).get(url(search_id), headers={"Last-Event-ID": "1"})
     assert [e["id"] for e in frames(response)] == ["2", "3"]
 
@@ -214,7 +211,7 @@ def test_new_committed_events_are_delivered_on_next_poll(search_factory, monkeyp
         assert len(sleeps) == 1
         # Publish on an independent session after the first empty read.
         await asyncio.to_thread(
-            JobQueueWorker(lambda source, request: PipelineResult(source=source)).run_once,
+            finish,
             search_id,
         )
 
@@ -269,3 +266,15 @@ def test_cors_allows_reconnection_header():
         "Access-Control-Request-Headers": "Last-Event-ID",
     })
     assert response.status_code == 200
+
+
+def finish(search_id, failed=False):
+    with SessionLocal.begin() as db:
+        Searches.start(db, search_id)
+        Events.publish(db, search_id, "search_started", {"search_id": str(search_id), "status": "running", "source": "multi"})
+        if failed:
+            Searches.fail(db, search_id, "private failure")
+            Events.publish(db, search_id, "search_failed", {"search_id": str(search_id), "status": "failed", "error": "Search execution failed"})
+        else:
+            Searches.complete(db, search_id, PipelineResult(source=JobSource.LINKEDIN))
+            Events.publish(db, search_id, "search_completed", {"search_id": str(search_id), "status": "completed", "total_discovered": 0, "total_extracted": 0, "total_failed": 0})

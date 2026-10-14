@@ -85,7 +85,7 @@ class SearchFailed(EventPayload):
 
 class JobSaved(EventPayload):
     job_id: str
-    source: Literal["linkedin", "wellfound"]
+    source: Literal["linkedin", "wellfound", "careerhub", "greenhouse", "ashby", "lever", "remotive", "usajobs"]
     total_extracted: int = Field(ge=1)
 
     @field_validator("job_id")
@@ -95,22 +95,17 @@ class JobSaved(EventPayload):
 
 
 class SourceStatus(EventPayload):
-    source: Literal["linkedin", "wellfound"]
-    status: Literal["collecting", "completed", "authorization_required", "access_blocked", "failed", "limit_reached"]
-
-
-class BrowserAction(EventPayload):
-    action: Literal[
-        "opened_source", "focused_keyword", "typed_keyword", "location_filter_local",
-        "submitted_search", "inspected_results", "scrolled_listing", "opened_listing",
-        "inspected_description", "returned_results", "filtered_job", "manual_required",
-    ]
+    source: Literal["linkedin", "wellfound", "careerhub", "greenhouse", "ashby", "lever", "remotive", "usajobs"]
+    status: Literal["collecting", "completed", "authorization_required", "access_blocked", "failed", "limit_reached", "disabled"]
+    scanned: int = Field(default=0, ge=0)
+    saved: int = Field(default=0, ge=0)
+    undated: int = Field(default=0, ge=0)
+    error: str | None = None
 
 
 EVENT_PAYLOADS: dict[str, type[EventPayload]] = {
     "source_status": SourceStatus,
     "job_saved": JobSaved,
-    "browser_action": BrowserAction,
     "search_queued": SearchQueued,
     "search_started": SearchStarted,
     "page_discovered": PageDiscovered,

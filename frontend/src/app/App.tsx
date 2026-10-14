@@ -1,10 +1,5 @@
-import { BrowserRouter } from 'react-router'
-import { AppRoutes } from './router'
+import { DashboardPage } from '../pages/DashboardPage'
 
 export default function App() {
-  return (
-    <BrowserRouter>
-      <AppRoutes />
-    </BrowserRouter>
-  )
+  return <DashboardPage />
 }

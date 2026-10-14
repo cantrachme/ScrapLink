@@ -17,22 +17,9 @@ from pydantic import (
 # JOB SEARCH MODELS
 # ==========================================
 
-class DatePosted(str, Enum):
-    PAST_24_HOURS = "24h"
-    PAST_WEEK = "7d"
-    PAST_MONTH = "30d"
-
-
-class ActiveJobsRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    max_results: int = Field(default=50, ge=1, le=500)
-    watch_mode: bool = True
-    watch_delay_seconds: float = Field(default=2.0, ge=1.5, le=3.0)
-
-
 class JobSearchRequest(BaseModel):
-    mode: Literal["search", "active_jobs"] = "search"
-    source: Literal["linkedin", "wellfound", "careerhub"] = "linkedin"
+    """Offline extraction input, retained for reusable parser tests; never an API request."""
+    source: Literal["linkedin", "wellfound", "careerhub", "greenhouse"] = "linkedin"
     keyword: str = Field(
         default="",
         max_length=200,
@@ -45,8 +32,6 @@ class JobSearchRequest(BaseModel):
     )
 
     date_posted: Literal["any", "24h", "7d", "30d"] = "24h"
-    watch_mode: bool = True
-    watch_delay_seconds: float = Field(default=2.0, ge=1.5, le=3.0)
 
     max_results: int = Field(
         default=50,
@@ -61,18 +46,9 @@ class JobSearchRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_discovery(self):
-        if self.mode == "search" and not self.keyword:
+        if not self.keyword:
             raise ValueError("Keyword cannot be empty")
-        if self.mode == "active_jobs" and (self.keyword or self.location or self.date_posted != "24h"
-                                           or self.source not in ("linkedin", "wellfound")):
-            raise ValueError("Active Jobs requires unrestricted LinkedIn/Wellfound discovery in the last 24 hours")
         return self
-
-
-class JobSearchResponse(BaseModel):
-    search_id: str
-    status: str
-    message: str
 
 
 # ==========================================
@@ -83,6 +59,11 @@ class JobSource(str, Enum):
     LINKEDIN = "linkedin"
     WELLFOUND = "wellfound"
     CAREERHUB = "careerhub"
+    GREENHOUSE = "greenhouse"
+    ASHBY = "ashby"
+    LEVER = "lever"
+    REMOTIVE = "remotive"
+    USAJOBS = "usajobs"
     REALPYTHON_DEMO = "realpython_demo"
 
 
@@ -243,25 +224,3 @@ class JobSearchResultsResponse(BaseModel):
     total_discovered: int = 0
     total_extracted: int = 0
     total_failed: int = 0
-
-
-class AssistedJobInput(BaseModel):
-    source: Literal["linkedin", "wellfound"] | None = None
-    company: str = Field(default="", max_length=500)
-    compensation: Compensation | None = None
-    posted_date: date | None = None
-    posted_at: datetime | None = None
-    posted_text: str | None = Field(default=None, max_length=255)
-    title: str = Field(min_length=1, max_length=500)
-    job_url: str = Field(max_length=2048)
-    location: str | None = Field(default=None, max_length=500)
-    workplace_type: WorkplaceType | None = None
-    description: str | None = Field(default=None, max_length=100000)
-
-    @field_validator("title", "job_url")
-    @classmethod
-    def nonempty(cls, value):
-        value = value.strip()
-        if not value:
-            raise ValueError("Cannot be empty")
-        return value
