@@ -1,28 +1,101 @@
+# Only Nginx publishes a host port. Keep this project/volume name to retain data.
+name: scraplink
+
+x-backend: &backend
+  build: .
+  image: scraplink-backend:local
+  init: true
+  restart: unless-stopped
+  env_file: .env
+  environment: &backend-environment
+    DATABASE_URL: ""
+    POSTGRES_HOST: db
+    POSTGRES_PORT: "5432"
+    FRONTEND_URL: http://localhost:8000
+    DEBUG: "false"
+    REMOTIVE_CACHE_PATH: /cache/remotive.json
+  networks:
+    - internal
 
 services:
   db:
     image: postgres:17-alpine
     restart: unless-stopped
-
     environment:
       POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB in .env}
       POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in .env}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
-
-    ports:
-      - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
-
     volumes:
       - scraplink_postgres_data:/var/lib/postgresql/data
-
+    networks:
+      - internal
     healthcheck:
-      test:
-        - CMD-SHELL
-        - pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"
+      test: [CMD-SHELL, 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
       interval: 5s
       timeout: 5s
       retries: 10
       start_period: 10s
 
+  api:
+    <<: *backend
+    command: [sh, -c, 'python -m alembic upgrade head && exec python -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips="*"']
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/db', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+
+  worker:
+    <<: *backend
+    command: [python, -m, backend.app.workers.run_worker]
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - internal
+      - egress
+    volumes:
+      - scraplink_source_cache:/cache
+    healthcheck:
+      test: [CMD, python, -c, "from backend.app.database import SessionLocal; from backend.app.api.routes.jobs import worker_available; s=SessionLocal(); ready=worker_available(s); s.close(); raise SystemExit(0 if ready else 1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 10s
+    stop_grace_period: 30s
+
+  nginx:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8000:80"
+    networks:
+      - internal
+      - egress
+    depends_on:
+      api:
+        condition: service_healthy
+      worker:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD-SHELL, 'wget -q -O /dev/null http://127.0.0.1/ && wget -q -O /dev/null http://127.0.0.1/health/db']
+      interval: 15s
+      timeout: 5s
+      retries: 4
+
+networks:
+  internal:
+    internal: true
+  # Internet egress for public job collection; no worker host ports.
+  egress:
+
 volumes:
   scraplink_postgres_data:
+    name: scraplink_scraplink_postgres_data
+  scraplink_source_cache:

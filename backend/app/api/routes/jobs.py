@@ -45,7 +45,7 @@ def start_search(db: Session = Depends(get_db)):
         SearchTaskRecord.status.in_(['pending', 'running'])).order_by(SearchTaskRecord.created_at.desc()).limit(1))
     if task is None:
         if not worker_available(db):
-            raise HTTPException(503, 'Discovery worker is not running. Start the app with .venv/bin/python scripts/start_live.py')
+            raise HTTPException(503, 'Discovery worker is not running. Start the app with docker compose up')
         task = SearchTaskRecord(search_id=uuid4(), source=None, status='pending',
             request_payload={'mode': 'discovery', 'window_end': utc_now().isoformat()})
         db.add(task)

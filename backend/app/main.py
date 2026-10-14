@@ -69,4 +69,4 @@ def database_health(
 @app.exception_handler(SQLAlchemyError)
 async def database_error(request, exc):
     logging.getLogger(__name__).exception("Database request failed", exc_info=exc)
-    return JSONResponse(status_code=503, content={"detail": "PostgreSQL unavailable or migrations missing. Start docker compose up -d and run .venv/bin/alembic upgrade head; see API logs for the database error."})
+    return JSONResponse(status_code=503, content={"detail": "PostgreSQL unavailable or migrations missing. Run docker compose up; migrations run automatically. See docker compose logs api db for the database error."})

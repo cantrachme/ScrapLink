@@ -16,8 +16,8 @@ class Settings(BaseSettings):
 
 
     # PostgreSQL
-    POSTGRES_HOST: str = "127.0.0.1"
-    POSTGRES_PORT: int = 5433
+    POSTGRES_HOST: str = "db"
+    POSTGRES_PORT: int = 5432
     POSTGRES_DB: str = "scraplink"
     POSTGRES_USER: str = "scraplink"
     POSTGRES_PASSWORD: str = ""
@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     REMOTIVE_CACHE_PATH: str = ".cache/remotive.json"
     BROWSER_HEADLESS: bool = True
     BROWSER_TIMEOUT_MS: int = 20000
-    FRONTEND_URL: str = "http://localhost:5173"
+    FRONTEND_URL: str = "http://localhost:8000"
 
     @field_validator("ASHBY_BOARDS", "GREENHOUSE_BOARDS", "LEVER_BOARDS")
     @classmethod

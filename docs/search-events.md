@@ -1,5 +1,10 @@
 # Discovery events
 
+All routes below are served through Nginx at **http://localhost:8000**. Nginx
+forwards the original path and Last-Event-ID, uses HTTP/1.1 upstream, and disables
+response/request buffering, caching, and gzip. Its stream read timeout is one
+hour; FastAPI sends heartbeats while idle. FastAPI has no published host port.
+
 `POST /api/v1/jobs/search` takes no search parameters. It returns the current
 pending/running discovery or queues one fixed seven-day run. A PostgreSQL
 transaction advisory lock serializes starts across API processes. A missing

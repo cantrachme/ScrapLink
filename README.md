@@ -5,29 +5,32 @@ automatically. No forms, manual saving, accounts, filters, or visible browsers.
 
 ## Start locally
 
-Requires Python 3.12, Node 22.22.2+ (or a supported newer release), Docker,
-and the existing project dependencies. First setup:
+Requires Docker with Compose. The existing `.env` supplies PostgreSQL credentials
+and optional source settings; keep its credentials and the existing database
+volume. For a fresh checkout only, copy `.env.example` to `.env` and set the
+PostgreSQL password once.
 
 ```sh
-python3.12 -m venv .venv
-.venv/bin/pip install -r requirements.txt
-npm --prefix frontend ci
-cp .env.example .env
-# Set POSTGRES_PASSWORD in .env (keep existing .env/database credentials if present).
+docker compose build
+docker compose up
 ```
 
-Start from the repository root:
+Open **[http://localhost:8000](http://localhost:8000)**. Nginx serves the production
+React build on `/` and proxies `/api/*`, `/health*`, `/docs`, `/docs/*`, `/redoc`,
+and `/openapi.json` to FastAPI. API and SSE URLs are relative to this same origin.
+There is no Vite server at runtime. **Only Nginx publishes a host port: 8000 on
+loopback.** PostgreSQL, FastAPI and the worker have no host port mappings.
 
-```sh
-docker compose up -d --wait
-.venv/bin/python scripts/start_live.py
-```
+Compose starts PostgreSQL, applies migrations when starting the API, waits for
+API/database and worker readiness, then starts Nginx. The worker has outbound
+internet access for public job collection. Database/API traffic stays on a private
+Docker network. SSE buffering, caching and gzip are disabled at Nginx.
 
-Open [ScrapLink](http://127.0.0.1:5173/). The launcher checks PostgreSQL, applies
-existing migrations, and supervises FastAPI, the queue worker, and Vite in one
-terminal. Ctrl+C stops all three. PostgreSQL retains its named volume. No browser
-installation is needed for collection. The live acceptance script uses headless
-Playwright Chromium; install it once with `.venv/bin/playwright install chromium`.
+Ctrl+C stops the foreground stack; `docker compose up` starts it again. The
+existing volume `scraplink_scraplink_postgres_data` is explicitly retained. Do not
+use `docker compose down -v` unless you intend to delete data. A separate volume
+retains Remotive's six-hour cache. Old host/port/DATABASE_URL values in `.env` are
+overridden inside Compose so the API and worker always connect to `db:5432`.
 
 ## Sources and publication evidence
 
@@ -54,10 +57,11 @@ seven-day discovery window passes. Missing optional values display as unknown.
 
 ## Architecture and bounds
 
-React → FastAPI → PostgreSQL queue → existing Python worker → Scrapling →
+React → Nginx → FastAPI → PostgreSQL queue → existing Python worker → Scrapling →
 PostgreSQL jobs/events → SSE → React. Each job and its event commit together.
 The database serializes duplicate starts; worker ownership locks prevent duplicate
-execution and expose liveness. No additional services or frameworks were added.
+execution and expose liveness. Nginx is the single public entry point; the
+application frameworks are unchanged.
 
 Each source stops at 20 unique qualifying jobs, 1,000 metadata rows, 120 inspected
 details, or 180 seconds. Scanning continues past 20 nonqualifying listings. Requests
@@ -66,18 +70,19 @@ retries, challenge solving, session import or proxy rotation. Employer HTML requ
 respect robots.txt; redirects and blocked responses stop that source visibly.
 Failures preserve previous saves and do not prevent other sources from running.
 Remotive uses its explicitly permitted redistribution API with a six-hour disk
-cache (`.cache/remotive.json`), source attribution and original links; its feed is
+cache (`/cache/remotive.json` in its named Docker volume), source attribution and original links; its feed is
 24 hours delayed. No Remotive webpage challenge is bypassed.
 
 ## Verification
 
 ```sh
-.venv/bin/python -m pytest -q
+docker compose exec api python -m pytest -q
 npm --prefix frontend run test
 npm --prefix frontend run build
 npm --prefix frontend run lint
 git diff --check
-# With the app running; real network calls and real database saves:
+# Optional browser acceptance from the existing local Python environment:
+# .venv/bin/playwright install chromium
 .venv/bin/python scripts/live_acceptance.py
 ```
 
@@ -85,8 +90,11 @@ Tests use an automatically created isolated PostgreSQL database (the configured
 user needs CREATEDB). Fixtures never enter the live queue. The live script clicks
 Search Jobs in headless Chromium, checks incremental React rendering and actual
 SSE, verifies freshness and full descriptions, reloads, and compares saved IDs.
-Evidence is written to `/tmp/scraplink-acceptance.json` and a screenshot beside it.
-See [verification results](docs/verification.md) and [SSE contract](docs/search-events.md).
+All browser requests go through `http://localhost:8000`; SSE must arrive before
+the run completes. Evidence is written to `/tmp/scraplink-docker-acceptance.json`
+and `/tmp/scraplink-docker-dashboard.png`. No host database connection is needed.
+See [single-port verification](docs/docker-verification.md),
+[earlier extraction results](docs/verification.md), and the [SSE contract](docs/search-events.md).
 
 ## Limitations
 
@@ -94,5 +102,5 @@ Coverage is limited to configured boards and scan budgets, not the whole market.
 Employer HTML can change. A timeout or access restriction is reported per source;
 zero jobs is a legitimate result. Dates certify publication, not that an employer
 will still accept an application. USAJOBS needs credentials and is not live-tested
-without them. The Vite proxy is for local development; a deployed build needs a
-same-origin `/api` reverse proxy that streams SSE without buffering.
+without them. Nginx returns an explicit 503 if FastAPI is unreachable; inspect
+`docker compose logs api worker nginx db` for the underlying cause.
